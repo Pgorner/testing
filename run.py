@@ -11,7 +11,7 @@ import st7789
 logging.basicConfig(level=logging.INFO)
 
 # Stream URL
-STREAM_URL = "http://192.168.50.181/video_feed"
+STREAM_URL = "http://192.168.50.181:5000/video_feed"
 
 def stream_video_and_audio(stream_url, disp):
     """
