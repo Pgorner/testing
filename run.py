@@ -38,7 +38,7 @@ def play_video_file(video_file, disp):
     fps = cap.get(cv2.CAP_PROP_FPS)
     if not fps or fps == 0:
         fps = 30
-    frame_delay = 1.0 / fps
+    frame_delay = 0
     logging.info(f"Video FPS: {fps:.2f}, target frame delay: {frame_delay:.3f} sec")
     
     while True:
