@@ -25,7 +25,7 @@ DISPLAY_HEIGHT = 320
 
 # In landscape mode, the effective resolution is swapped: 320x240.
 # Adjust this rotation angle as needed: try 0, 90, 180, or 270.
-ROTATION_DEGREE = 180
+ROTATION_DEGREE = 0
 
 def download_video(url, output_path):
     """
