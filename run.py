@@ -14,7 +14,7 @@ import cst816d
 PROCESSED_DIR = "/home/patrick/processed"  # Adjust path if needed
 
 # Display resolution (adjust if different)
-DISP_WIDTH = 240
+DISP_WIDTH = 320
 DISP_HEIGHT = 240
 
 def play_video_file(video_file, disp):
@@ -23,11 +23,14 @@ def play_video_file(video_file, disp):
       - Launches an audio process (mpv in no-video mode) for sound.
       - Uses OpenCV to display video frames.
       - Uses cv2.rotate for efficient 90° rotation.
+      - Attempts to synchronize playback by delaying frame display based on measured processing time.
     """
     logging.info(f"Playing video file: {video_file}")
     
     # Start audio playback via mpv (ensure mpv is installed)
     audio_proc = subprocess.Popen(["mpv", "--no-video", "--really-quiet", video_file])
+    # Allow audio to initialize
+    time.sleep(0.1)
     
     cap = cv2.VideoCapture(video_file)
     if not cap.isOpened():
@@ -38,22 +41,24 @@ def play_video_file(video_file, disp):
     fps = cap.get(cv2.CAP_PROP_FPS)
     if not fps or fps == 0:
         fps = 30
-    frame_delay = 0
+    frame_delay = 1.0 / fps
     logging.info(f"Video FPS: {fps:.2f}, target frame delay: {frame_delay:.3f} sec")
     
     while True:
-        start_time = time.time()
+        start_time = time.perf_counter()
         ret, frame = cap.read()
         if not ret:
             break
         
         # Convert from BGR to RGB.
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        # Rotate 90° clockwise using OpenCV.
+        rotated = cv2.rotate(frame_rgb, cv2.ROTATE_90_CLOCKWISE)
         # Convert to PIL Image.
-        image = Image.fromarray(frame_rgb)
+        image = Image.fromarray(rotated)
         disp.show_image(image)
         
-        elapsed = time.time() - start_time
+        elapsed = time.perf_counter() - start_time
         sleep_time = frame_delay - elapsed
         if sleep_time > 0:
             time.sleep(sleep_time)
