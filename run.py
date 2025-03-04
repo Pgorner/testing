@@ -1,74 +1,59 @@
-#!/usr/bin/python
-# -*- coding: UTF-8 -*-
-import os
-import cv2
+#!/usr/bin/env python3
+import subprocess
 import time
-from PIL import Image
-import st7789  # Waveshare display library
-import cst816d  # Touch library
+from yt_dlp import YoutubeDL
 
-# Initialize display and touch
-disp = st7789.st7789()
-disp.clear()
-touch = cst816d.cst816d()
+# List your YouTube video URLs here
+VIDEO_LINKS = [
+    'https://www.youtube.com/watch?v=VIDEO_ID1',
+    'https://www.youtube.com/watch?v=VIDEO_ID2',
+    'https://www.youtube.com/watch?v=VIDEO_ID3',
+]
 
-# Directory containing video files
-video_dir = "/home/patrick/processed"
+def get_video_stream_url(link):
+    """
+    Uses yt-dlp to extract the direct stream URL for the best quality format.
+    """
+    ydl_opts = {
+        'format': 'best',
+        'quiet': True,
+        'skip_download': True,
+        'no_warnings': True,
+    }
+    try:
+        with YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(link, download=False)
+            # The 'url' field holds the direct URL to the video stream.
+            stream_url = info.get('url')
+            return stream_url
+    except Exception as e:
+        print(f"Error extracting URL from {link}: {e}")
+        return None
 
-# Get list of video files; adjust extensions as needed
-video_files = [os.path.join(video_dir, f) for f in os.listdir(video_dir)
-               if f.lower().endswith(('.mp4', '.avi', '.mov', '.mkv'))]
-video_files.sort()  # Optional: sort list
+def play_video(stream_url):
+    """
+    Calls omxplayer to play the video using the direct stream URL.
+    The '--no-osd' flag disables the on-screen display.
+    """
+    if stream_url:
+        print(f"Playing video stream: {stream_url}")
+        try:
+            # Start omxplayer and wait until playback finishes.
+            subprocess.call(['omxplayer', '--no-osd', stream_url])
+        except Exception as e:
+            print(f"Error during playback: {e}")
 
-# Loop through each video file
-for video_path in video_files:
-    print(f"Playing video: {video_path}")
-    cap = cv2.VideoCapture(video_path)
-    
-    if not cap.isOpened():
-        print(f"Error: Could not open video {video_path}")
-        continue
+def main():
+    while True:
+        for link in VIDEO_LINKS:
+            print(f"\nProcessing: {link}")
+            stream_url = get_video_stream_url(link)
+            if stream_url:
+                play_video(stream_url)
+            else:
+                print("Skipping due to extraction error.")
+            # Optional: wait a second between videos
+            time.sleep(1)
 
-    # Retrieve video frame rate for correct timing
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    if fps <= 0:
-        fps = 24  # Fallback to a default value if FPS info is unavailable
-    delay = 1.0 / fps
-
-    while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
-            break  # End of video
-
-        # Convert frame from BGR (OpenCV default) to RGB (PIL default)
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        # Convert NumPy array to PIL Image
-        image = Image.fromarray(frame_rgb)
-
-        # Resize the image if needed to match your display's resolution
-        # For example, if your display is 240x240 pixels:
-        # image = image.resize((240, 240))
-        
-        # Display the image on the Waveshare display
-        disp.show_image(image)
-
-        # Optionally handle touch input
-        touch.read_touch_data()
-        point, coordinates = touch.get_touch_xy()
-        if point != 0 and coordinates:
-            # Example: Draw a small rectangle at the touch point
-            disp.draw_rectangle(
-                coordinates[0]['x'], coordinates[0]['y'],
-                coordinates[0]['x'] + 5, coordinates[0]['y'] + 5,
-                0x00ff  # Rectangle color
-            )
-            print(f"Touch at: x={coordinates[0]['x']}, y={coordinates[0]['y']}")
-
-        # Wait for the appropriate time before showing the next frame
-        time.sleep(delay)
-    
-    cap.release()
-    # Optional: clear the display between videos
-    disp.clear()
-
-print("All videos played.")
+if __name__ == '__main__':
+    main()
