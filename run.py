@@ -12,9 +12,8 @@ import cst816d
 
 # List of YouTube video URLs to loop
 VIDEO_URLS = [
-    "https://www.youtube.com/watch?v=VIDEO_ID1",
-    "https://www.youtube.com/watch?v=VIDEO_ID2",
-    "https://www.youtube.com/watch?v=VIDEO_ID3",
+    "https://www.youtube.com/watch?v=rtRl9HZGZEE",
+    "https://www.youtube.com/watch?v=4oi-TgKBvd4"
 ]
 
 def download_video(url, output_path):
