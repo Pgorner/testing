@@ -42,7 +42,8 @@ def play_youtube_video(link, disp):
       1. Extracting the stream URL.
       2. Opening the stream with OpenCV.
       3. Converting each frame to a PIL image.
-      4. Resizing and displaying it on the Waveshare.
+      4. Rotating 90 degrees, resizing and displaying it on the Waveshare.
+      5. Matching the playback speed to the video FPS.
     """
     stream_url = get_video_stream_url(link)
     if not stream_url:
@@ -59,10 +60,15 @@ def play_youtube_video(link, disp):
     disp_width = getattr(disp, 'width', 240)
     disp_height = getattr(disp, 'height', 240)
 
-    fps = 30  # target framerate
+    # Try to get FPS from the capture; if not available, default to 30.
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    if fps == 0 or fps is None:
+        fps = 30
     frame_delay = 1.0 / fps
+    logging.info(f"Video FPS: {fps:.2f}, frame delay: {frame_delay:.3f} seconds")
 
     while True:
+        start_time = time.time()
         ret, frame = cap.read()
         if not ret:
             break  # End of video stream or read error
@@ -70,10 +76,16 @@ def play_youtube_video(link, disp):
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         # Convert the NumPy array to a PIL Image.
         image = Image.fromarray(frame_rgb)
+        # Rotate image 90° (clockwise). 'expand=True' ensures the dimensions adjust.
+        image = image.rotate(90, expand=True)
         # Resize image to match your display resolution.
         image = image.resize((disp_width, disp_height))
         disp.show_image(image)
-        time.sleep(frame_delay)
+        # Adjust delay to match the video's framerate.
+        elapsed = time.time() - start_time
+        sleep_time = frame_delay - elapsed
+        if sleep_time > 0:
+            time.sleep(sleep_time)
 
     cap.release()
     logging.info("Finished playing video.")
@@ -81,7 +93,7 @@ def play_youtube_video(link, disp):
 if __name__=='__main__':
     logging.basicConfig(level=logging.INFO)
     
-    # Initialize the Waveshare display
+    # Initialize the Waveshare display.
     disp = st7789.st7789()
     disp.clear()
     
@@ -94,42 +106,3 @@ if __name__=='__main__':
             play_youtube_video(link, disp)
             # Pause briefly between videos if desired.
             time.sleep(2)
-#!/usr/bin/python
-# -*- coding: UTF-8 -*-
-#import chardet
-import os
-import sys 
-import time
-import logging
-import st7789
-import cst816d
-from PIL import Image,ImageDraw,ImageFont
-
-if __name__=='__main__':
-    
-    disp = st7789.st7789()
-    disp.clear()
-    touch = cst816d.cst816d()
-    
-
-    logging.info("show image")
-    ImagePath = ["./pic/img_1.jpg", "./pic/img_2.jpg", "./pic/img_3.jpg",]
-    for i in range(0, 3):
-        image = Image.open(ImagePath[i])	
-        # image = image.rotate(0)
-        disp.show_image(image)
-        time.sleep(4)
-    
-    disp.clear()
-
-    while True:
-        touch.read_touch_data()
-        point, coordinates = touch.get_touch_xy()
-        if point != 0 and coordinates:
-            disp.dre_rectangle(
-                coordinates[0]['x'], coordinates[0]['y'],
-                coordinates[0]['x'] + 5, coordinates[0]['y'] + 5,
-                0x00ff  # 矩形的颜色
-            )
-            print(f"point 1 coordinates: x={coordinates[0]['x']}, y={coordinates[0]['y']}")
-        time.sleep(0.02)
