@@ -72,8 +72,8 @@ def play_video(video_path, disp):
 
     # For landscape mode, swap dimensions (effective resolution: 320x240)
     if LANDSCAPE_MODE:
-        screen_width = DISPLAY_HEIGHT  # 320
-        screen_height = DISPLAY_WIDTH  # 240
+        screen_width = DISPLAY_HEIGHT  # 240
+        screen_height = DISPLAY_WIDTH  # 320
     else:
         screen_width = DISPLAY_WIDTH
         screen_height = DISPLAY_HEIGHT
