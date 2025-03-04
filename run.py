@@ -65,7 +65,7 @@ def play_youtube_video(link, disp):
 
     # Use display's resolution; adjust these defaults as needed.
     disp_width = getattr(disp, 'width', 240)
-    disp_height = getattr(disp, 'height', 240)
+    disp_height = getattr(disp, 'height', 320)
 
     # Try to get FPS from the video stream; default to 30 if unavailable.
     fps = cap.get(cv2.CAP_PROP_FPS)
