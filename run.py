@@ -19,6 +19,10 @@ VIDEO_URLS = [
 # Set this flag True if you want the display in landscape mode.
 LANDSCAPE_MODE = True
 
+# For your display, specify the native resolution.
+DISPLAY_WIDTH = 240
+DISPLAY_HEIGHT = 320
+
 def download_video(url, output_path):
     """
     Download a YouTube video using yt_dlp.
@@ -62,28 +66,26 @@ def play_video(video_path, disp):
         fps = 25  # default fallback
     delay = 1.0 / fps
 
-    # Set display dimensions (adjust if necessary)
-    # If landscape mode is used, swap width and height if needed.
+    # For landscape mode, swap dimensions (landscape: 320x240)
     if LANDSCAPE_MODE:
-        screen_width = disp.height if hasattr(disp, 'height') else 240
-        screen_height = disp.width if hasattr(disp, 'width') else 240
+        screen_width = DISPLAY_HEIGHT  # 320
+        screen_height = DISPLAY_WIDTH  # 240
     else:
-        screen_width = disp.width if hasattr(disp, 'width') else 240
-        screen_height = disp.height if hasattr(disp, 'height') else 240
+        screen_width = DISPLAY_WIDTH
+        screen_height = DISPLAY_HEIGHT
 
     while True:
         ret, frame = cap.read()
         if not ret:
             break  # End of video
 
-        # Convert frame from BGR to RGB format for PIL
+        # Convert frame from BGR (OpenCV) to RGB (PIL)
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         image = Image.fromarray(frame)
 
-        # Rotate the image if landscape mode is enabled.
-        # Adjust the rotation angle as needed (90 degrees here).
+        # Rotate the image: 270 degrees rotation will orient it correctly in landscape mode.
         if LANDSCAPE_MODE:
-            image = image.rotate(90, expand=True)
+            image = image.rotate(270, expand=True)
 
         # Resize the image to fit the display
         image = image.resize((screen_width, screen_height))
@@ -114,7 +116,7 @@ if __name__ == '__main__':
             logging.info(f"Playing video: {video_file}")
             play_video(video_file, disp)
 
-        # Optional: clear the display between loops
+        # Clear the display between loops
         disp.clear()
         time.sleep(1)
 
