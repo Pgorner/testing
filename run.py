@@ -29,12 +29,12 @@ KEY_LAYOUT = [
 ]
 
 # Colors (in RGB)
-BG_COLOR = (0, 0, 0)             # Background: Black
-INPUT_BG_COLOR = (255, 255, 255)   # Input line background: White
-INPUT_TEXT_COLOR = (0, 0, 0)       # Input text: Black
-KEY_FILL_COLOR = (50, 50, 50)      # Key background: Dark gray
-KEY_OUTLINE_COLOR = (255, 255, 255)# Key outline: White
-KEY_TEXT_COLOR = (255, 255, 255)   # Key text: White
+BG_COLOR = (0, 0, 0)              # Background: Black
+INPUT_BG_COLOR = (255, 255, 255)    # Input line background: White
+INPUT_TEXT_COLOR = (0, 0, 0)        # Input text: Black
+KEY_FILL_COLOR = (50, 50, 50)       # Key background: Dark gray
+KEY_OUTLINE_COLOR = (255, 255, 255) # Key outline: White
+KEY_TEXT_COLOR = (255, 255, 255)    # Key text: White
 
 # Use default font from PIL (you can load a TTF if preferred)
 font = ImageFont.load_default()
@@ -59,10 +59,12 @@ def draw_interface(current_input):
             y = INPUT_LINE_HEIGHT + row * KEY_HEIGHT
             draw.rectangle([x, y, x + KEY_WIDTH, y + KEY_HEIGHT],
                            fill=KEY_FILL_COLOR, outline=KEY_OUTLINE_COLOR)
-            # Center the label on the key
-            text_size = draw.textsize(label, font=font)
-            text_x = x + (KEY_WIDTH - text_size[0]) / 2
-            text_y = y + (KEY_HEIGHT - text_size[1]) / 2
+            # Use textbbox instead of textsize to calculate text dimensions
+            bbox = draw.textbbox((0, 0), label, font=font)
+            text_width = bbox[2] - bbox[0]
+            text_height = bbox[3] - bbox[1]
+            text_x = x + (KEY_WIDTH - text_width) / 2
+            text_y = y + (KEY_HEIGHT - text_height) / 2
             draw.text((text_x, text_y), label, font=font, fill=KEY_TEXT_COLOR)
     
     return image
@@ -89,7 +91,6 @@ if __name__=='__main__':
         # Read touch data and get coordinates
         touch.read_touch_data()
         point, coordinates = touch.get_touch_xy()
-        
         if point != 0 and coordinates:
             tx = coordinates[0]['x']
             ty = coordinates[0]['y']
@@ -108,14 +109,14 @@ if __name__=='__main__':
             
             if pressed_key:
                 if pressed_key == "Del":
-                    # Remove last character from the input string
+                    # Remove the last character from the input string
                     current_input = current_input[:-1]
                 elif pressed_key == "Enter":
                     # For demonstration, print the input and then clear it
                     print("Entered:", current_input)
                     current_input = ""
                 else:
-                    # Append the pressed digit or character to the input string
+                    # Append the pressed key (digit/character) to the current input
                     current_input += pressed_key
                 # Debounce delay to avoid multiple triggers
                 time.sleep(0.3)
