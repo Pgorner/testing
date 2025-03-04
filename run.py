@@ -59,7 +59,7 @@ def draw_interface(current_input):
             y = INPUT_LINE_HEIGHT + row * KEY_HEIGHT
             draw.rectangle([x, y, x + KEY_WIDTH, y + KEY_HEIGHT],
                            fill=KEY_FILL_COLOR, outline=KEY_OUTLINE_COLOR)
-            # Use textbbox instead of textsize (avoids deprecation warnings)
+            # Use textbbox to calculate text dimensions (avoids deprecation warnings)
             bbox = draw.textbbox((0, 0), label, font=font)
             text_width = bbox[2] - bbox[0]
             text_height = bbox[3] - bbox[1]
@@ -94,17 +94,22 @@ if __name__=='__main__':
         touch.read_touch_data()
         point, coordinates = touch.get_touch_xy()
         if point != 0 and coordinates:
-            # Adjust the touch x-coordinate to match the flipped image.
-            tx = SCREEN_WIDTH - coordinates[0]['x']
-            ty = coordinates[0]['y']
-            pressed_key = None
+            raw_x = coordinates[0]['x']
+            raw_y = coordinates[0]['y']
+            # Adjust the x coordinate: subtract from (SCREEN_WIDTH - 1)
+            tx = (SCREEN_WIDTH - 1) - raw_x
+            ty = raw_y
             
-            # Determine which key is pressed based on the adjusted touch coordinates
+            # Debug print to see raw vs. adjusted coordinates
+            print(f"Raw touch: x={raw_x}, y={raw_y}  |  Adjusted: x={tx}, y={ty}")
+            
+            pressed_key = None
+            # Determine which key is pressed based on the adjusted coordinates
             for row in range(NUM_ROWS):
                 for col in range(NUM_COLS):
-                    x = col * KEY_WIDTH
-                    y = INPUT_LINE_HEIGHT + row * KEY_HEIGHT
-                    if (x <= tx <= x + KEY_WIDTH) and (y <= ty <= y + KEY_HEIGHT):
+                    key_x = col * KEY_WIDTH
+                    key_y = INPUT_LINE_HEIGHT + row * KEY_HEIGHT
+                    if (key_x <= tx <= key_x + KEY_WIDTH) and (key_y <= ty <= key_y + KEY_HEIGHT):
                         pressed_key = KEY_LAYOUT[row][col]
                         break
                 if pressed_key:
