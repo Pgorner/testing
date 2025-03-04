@@ -29,7 +29,7 @@ ROTATION_DEGREE = 0
 
 def download_video(url, output_path):
     """
-    Download a YouTube video using yt_dlp.
+    Download a YouTube video using yt_dlp and re-encode it to 20 FPS.
     If the file already exists, skip downloading.
     """
     if os.path.exists(output_path):
@@ -45,14 +45,21 @@ def download_video(url, output_path):
                            'AppleWebKit/537.36 (KHTML, like Gecko) '
                            'Chrome/108.0.0.0 Safari/537.36')
         },
+        # Add a postprocessor to re-encode the video to 20 FPS
+        'postprocessors': [{
+            'key': 'FFmpegVideoConvertor',
+            'preferedformat': 'mp4'
+        }],
+        'postprocessor_args': ['-r', '20'],  # Force 20 FPS
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        logging.info(f"Downloading {url} to {output_path}")
+        logging.info(f"Downloading {url} to {output_path} with 20 FPS conversion")
         try:
             ydl.download([url])
         except Exception as e:
             logging.error(f"Error downloading {url}: {e}")
     return output_path
+
 
 def play_video(video_path, disp):
     """
@@ -64,14 +71,11 @@ def play_video(video_path, disp):
     if not cap.isOpened():
         logging.error(f"Failed to open video file: {video_path}")
         return
-    
+
+    # Optionally, check the FPS (should be 20 now)
     fps = cap.get(cv2.CAP_PROP_FPS)
-    if fps == 0:
-        fps = 25  # default fallback
-    effective_fps = min(fps, 20)
-    delay = 1.0 / effective_fps
-
-
+    logging.info(f"Playing video at {fps} FPS")
+    
     # For landscape mode, swap dimensions (effective resolution: 320x240)
     if LANDSCAPE_MODE:
         screen_width = DISPLAY_HEIGHT  # 240
@@ -96,9 +100,10 @@ def play_video(video_path, disp):
         # Resize the image to fit the display
         image = image.resize((screen_width, screen_height))
         disp.show_image(image)
-        time.sleep(delay)
+        # Removed explicit time.sleep: the video file now runs at 20 FPS naturally
 
     cap.release()
+
 
 if __name__ == '__main__':
     # Setup logging
