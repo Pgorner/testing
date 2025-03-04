@@ -9,6 +9,7 @@ import cst816d
 from PIL import Image
 import cv2
 from yt_dlp import YoutubeDL
+import subprocess
 
 # List your YouTube video URLs here
 VIDEO_LINKS = [
@@ -40,10 +41,10 @@ def play_youtube_video(link, disp):
     """
     Plays a YouTube video on the Waveshare display by:
       1. Extracting the stream URL.
-      2. Opening the stream with OpenCV.
-      3. Converting each frame to a PIL image.
-      4. Rotating 90 degrees, resizing and displaying it on the Waveshare.
-      5. Matching the playback speed to the video FPS.
+      2. Launching an audio process using mpv (with --no-video) so sound plays via aux.
+      3. Opening the video stream with OpenCV.
+      4. Converting each frame to a PIL image, rotating 90°, resizing it, and displaying it.
+      5. Timing each frame to try to match the video FPS.
     """
     stream_url = get_video_stream_url(link)
     if not stream_url:
@@ -51,43 +52,52 @@ def play_youtube_video(link, disp):
         return
 
     logging.info(f"Playing video: {link}")
+    
+    # Start the audio process using mpv in no-video mode.
+    # Ensure mpv is installed and that your Pi is configured to output audio via aux.
+    audio_proc = subprocess.Popen(["mpv", "--no-video", "--really-quiet", stream_url])
+    
     cap = cv2.VideoCapture(stream_url)
     if not cap.isOpened():
         logging.error("Failed to open video stream.")
+        audio_proc.terminate()
         return
 
-    # Use display's resolution if available; adjust these defaults as needed.
+    # Use display's resolution; adjust these defaults as needed.
     disp_width = getattr(disp, 'width', 240)
     disp_height = getattr(disp, 'height', 240)
 
-    # Try to get FPS from the capture; if not available, default to 30.
+    # Try to get FPS from the video stream; default to 30 if unavailable.
     fps = cap.get(cv2.CAP_PROP_FPS)
-    if fps == 0 or fps is None:
+    if not fps or fps == 0:
         fps = 30
     frame_delay = 1.0 / fps
-    logging.info(f"Video FPS: {fps:.2f}, frame delay: {frame_delay:.3f} seconds")
+    logging.info(f"Video FPS: {fps:.2f}, target frame delay: {frame_delay:.3f} sec")
 
     while True:
         start_time = time.time()
         ret, frame = cap.read()
         if not ret:
             break  # End of video stream or read error
-        # OpenCV reads frames as BGR; convert to RGB.
+
+        # Convert from BGR (OpenCV) to RGB.
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        # Convert the NumPy array to a PIL Image.
+        # Convert to a PIL Image.
         image = Image.fromarray(frame_rgb)
-        # Rotate image 90° (clockwise). 'expand=True' ensures the dimensions adjust.
+        # Rotate 90° clockwise (expand adjusts dimensions accordingly).
         image = image.rotate(90, expand=True)
-        # Resize image to match your display resolution.
+        # Resize image to match the display resolution.
         image = image.resize((disp_width, disp_height))
         disp.show_image(image)
-        # Adjust delay to match the video's framerate.
+
+        # Calculate processing time and sleep to maintain the desired frame rate.
         elapsed = time.time() - start_time
         sleep_time = frame_delay - elapsed
         if sleep_time > 0:
             time.sleep(sleep_time)
 
     cap.release()
+    audio_proc.terminate()
     logging.info("Finished playing video.")
 
 if __name__=='__main__':
@@ -100,9 +110,9 @@ if __name__=='__main__':
     # (Optional) Initialize touch if needed.
     touch = cst816d.cst816d()
     
-    # Loop through each YouTube video continuously.
+    # Loop continuously through the list of YouTube videos.
     while True:
         for link in VIDEO_LINKS:
             play_youtube_video(link, disp)
-            # Pause briefly between videos if desired.
+            # Brief pause between videos.
             time.sleep(2)
