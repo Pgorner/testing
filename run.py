@@ -35,16 +35,30 @@ def init_spi_sd():
         logging.error(f"❌ SPI SD init failed: {e}")
         return None
 
-# Function to mount the SD card
+import subprocess
+
 def mount_sd():
+    """Check if SD card is already mounted, if not, mount it."""
     os.makedirs(SD_MOUNT_PATH, exist_ok=True)
+
+    # Check if the SD card is already mounted
+    try:
+        output = subprocess.check_output("mount", shell=True).decode()
+        if SD_MOUNT_PATH in output:
+            logging.info(f"✅ SD card is already mounted at {SD_MOUNT_PATH}")
+            return True
+    except Exception as e:
+        logging.error(f"⚠️ Error checking mount status: {e}")
+
+    # Try mounting the SD card
     cmd = f"sudo mount -o uid=pi,gid=pi -t vfat /dev/mmcblk0 {SD_MOUNT_PATH}"
     if os.system(cmd) == 0:
-        logging.info(f"✅ SD card mounted at {SD_MOUNT_PATH}")
+        logging.info(f"✅ SD card successfully mounted at {SD_MOUNT_PATH}")
         return True
     else:
         logging.error("❌ Failed to mount SD card.")
         return False
+
 
 # Function to list MP4 videos in /movies on the SD card
 def get_video_files():
