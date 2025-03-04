@@ -13,7 +13,7 @@ from PIL import Image, ImageDraw, ImageFont
 # -------------------------
 SCREEN_WIDTH = 320
 SCREEN_HEIGHT = 240
-INPUT_LINE_HEIGHT = 40  # Top area for displaying input
+INPUT_LINE_HEIGHT = 40  # Top area for displaying input (for visual reference)
 
 NUM_ROWS = 4
 NUM_COLS = 3
@@ -36,20 +36,20 @@ KEY_FILL_COLOR = (50, 50, 50)       # Key background: Dark gray
 KEY_OUTLINE_COLOR = (255, 255, 255) # Key outline: White
 KEY_TEXT_COLOR = (255, 255, 255)    # Key text: White
 
-# Use default font from PIL (you can load a TTF if preferred)
+# Use default font from PIL (you can load a TTF font if desired)
 font = ImageFont.load_default()
 
 # -------------------------
 # Function to draw the interface
 # -------------------------
-def draw_interface(current_input):
+def draw_interface():
     # Create a new image for the current frame
     image = Image.new("RGB", (SCREEN_WIDTH, SCREEN_HEIGHT), BG_COLOR)
     draw = ImageDraw.Draw(image)
     
-    # Draw the input line area at the top
+    # Draw the input line area at the top (for visual reference)
     draw.rectangle([0, 0, SCREEN_WIDTH, INPUT_LINE_HEIGHT], fill=INPUT_BG_COLOR)
-    draw.text((10, 10), current_input, font=font, fill=INPUT_TEXT_COLOR)
+    draw.text((10, 10), "Touch a key...", font=font, fill=INPUT_TEXT_COLOR)
     
     # Draw the numpad keys
     for row in range(NUM_ROWS):
@@ -59,7 +59,7 @@ def draw_interface(current_input):
             y = INPUT_LINE_HEIGHT + row * KEY_HEIGHT
             draw.rectangle([x, y, x + KEY_WIDTH, y + KEY_HEIGHT],
                            fill=KEY_FILL_COLOR, outline=KEY_OUTLINE_COLOR)
-            # Use textbbox to calculate text dimensions (avoids deprecation warnings)
+            # Use textbbox (avoids deprecation warnings)
             bbox = draw.textbbox((0, 0), label, font=font)
             text_width = bbox[2] - bbox[0]
             text_height = bbox[3] - bbox[1]
@@ -70,9 +70,11 @@ def draw_interface(current_input):
     return image
 
 # -------------------------
-# Main routine
+# Main routine (test program)
 # -------------------------
 if __name__=='__main__':
+    logging.basicConfig(level=logging.DEBUG)
+    
     # Initialize display and clear screen
     disp = st7789.st7789()
     disp.clear()
@@ -80,13 +82,11 @@ if __name__=='__main__':
     # Initialize touch controller
     touch = cst816d.cst816d()
 
-    logging.info("Starting landscape numpad input interface")
-    current_input = ""
+    logging.info("Starting numpad key test program")
     
     while True:
-        # Create the interface image
-        image = draw_interface(current_input)
-        # Flip the image horizontally to correct the mirrored output
+        # Draw and flip the interface to correct the mirroring
+        image = draw_interface()
         flipped_image = image.transpose(Image.FLIP_LEFT_RIGHT)
         disp.show_image(flipped_image)
         
@@ -99,12 +99,9 @@ if __name__=='__main__':
             # Adjust the x coordinate: subtract from (SCREEN_WIDTH - 1)
             tx = (SCREEN_WIDTH - 1) - raw_x
             ty = raw_y
-            
-            # Debug print to see raw vs. adjusted coordinates
-            print(f"Raw touch: x={raw_x}, y={raw_y}  |  Adjusted: x={tx}, y={ty}")
-            
+
+            # Determine which key is pressed based on adjusted coordinates
             pressed_key = None
-            # Determine which key is pressed based on the adjusted coordinates
             for row in range(NUM_ROWS):
                 for col in range(NUM_COLS):
                     key_x = col * KEY_WIDTH
@@ -114,15 +111,24 @@ if __name__=='__main__':
                         break
                 if pressed_key:
                     break
-            
+
+            # Print debug info to console
+            print("============================================")
+            print(f"Raw touch coordinates: x={raw_x}, y={raw_y}")
+            print(f"Adjusted coordinates:  x={tx}, y={ty}")
             if pressed_key:
-                if pressed_key == "Del":
-                    current_input = current_input[:-1]
-                elif pressed_key == "Enter":
-                    print("Entered:", current_input)
-                    current_input = ""
-                else:
-                    current_input += pressed_key
-                # Debounce to avoid multiple rapid triggers
-                time.sleep(0.3)
+                print(f"Mapped key: {pressed_key}")
+            else:
+                print("No key mapped for these coordinates.")
+            
+            # Ask user for feedback via console input
+            user_feedback = input("Please type the key you actually pressed (or press Enter if correct): ").strip()
+            if user_feedback:
+                print(f"User reported: {user_feedback}")
+            else:
+                print("User confirmed the mapped key is correct.")
+            print("============================================\n")
+            
+            # Small pause for debouncing (and to allow time for next touch)
+            time.sleep(0.5)
         time.sleep(0.02)
