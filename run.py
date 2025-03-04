@@ -1,39 +1,59 @@
 #!/usr/bin/env python3
-import os
-import psutil
+import subprocess
+import time
+from yt_dlp import YoutubeDL
 
-def find_sd_card_mount():
-    """
-    Find a mount point that is not the boot drive. This example assumes that
-    the main system drive is mounted on '/' and that the SD card is mounted elsewhere.
-    """
-    boot_mount = '/'
-    for part in psutil.disk_partitions():
-        # Skip the boot partition
-        if part.mountpoint == boot_mount:
-            continue
-        # We assume that an SD card will be a removable device with a FAT or similar filesystem.
-        # You may need to adjust this logic based on your system.
-        if 'mmcblk' in part.device or part.fstype in ['vfat', 'exfat', 'ntfs', 'ext4']:
-            return part.mountpoint
-    return None
+# List your YouTube video URLs here
+VIDEO_LINKS = [
+    'https://www.youtube.com/watch?v=rtRl9HZGZEE',
+    'https://www.youtube.com/watch?v=mLerrgININk',
+    'https://www.youtube.com/watch?v=EuaA_Efu_3U',
+]
 
-def list_files(mount_point):
+def get_video_stream_url(link):
+    """
+    Uses yt-dlp to extract the direct stream URL for the best quality format.
+    """
+    ydl_opts = {
+        'format': 'best',
+        'quiet': True,
+        'skip_download': True,
+        'no_warnings': True,
+    }
     try:
-        items = os.listdir(mount_point)
-        if not items:
-            print(f"The SD card mounted at {mount_point} is empty.")
-        else:
-            print(f"Files and directories on the SD card at {mount_point}:")
-            for item in items:
-                print(item)
+        with YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(link, download=False)
+            # The 'url' field holds the direct URL to the video stream.
+            stream_url = info.get('url')
+            return stream_url
     except Exception as e:
-        print(f"Error accessing {mount_point}: {e}")
+        print(f"Error extracting URL from {link}: {e}")
+        return None
+
+def play_video(stream_url):
+    """
+    Calls omxplayer to play the video using the direct stream URL.
+    The '--no-osd' flag disables the on-screen display.
+    """
+    if stream_url:
+        print(f"Playing video stream: {stream_url}")
+        try:
+            # Start omxplayer and wait until playback finishes.
+            subprocess.call(['omxplayer', '--no-osd', stream_url])
+        except Exception as e:
+            print(f"Error during playback: {e}")
+
+def main():
+    while True:
+        for link in VIDEO_LINKS:
+            print(f"\nProcessing: {link}")
+            stream_url = get_video_stream_url(link)
+            if stream_url:
+                play_video(stream_url)
+            else:
+                print("Skipping due to extraction error.")
+            # Optional: wait a second between videos
+            time.sleep(1)
 
 if __name__ == '__main__':
-    sd_mount = find_sd_card_mount()
-    if sd_mount:
-        print(f"SD card detected at: {sd_mount}")
-        list_files(sd_mount)
-    else:
-        print("No SD card mount found. Make sure the TF card is inserted and auto-mounted.")
+    main()
