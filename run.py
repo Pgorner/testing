@@ -1,15 +1,14 @@
-
 #!/usr/bin/env python3
 import subprocess
 import time
-import shutil
+import os
 from yt_dlp import YoutubeDL
 
 # List your YouTube video URLs here
 VIDEO_LINKS = [
     'https://www.youtube.com/watch?v=rtRl9HZGZEE',
     'https://www.youtube.com/watch?v=mLerrgININk',
-    'https://www.youtube.com/watch?v=EuaA_Efu_3U',
+    # Add more URLs as needed.
 ]
 
 def get_video_stream_url(link):
@@ -25,7 +24,6 @@ def get_video_stream_url(link):
     try:
         with YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(link, download=False)
-            # The 'url' field holds the direct URL to the video stream.
             stream_url = info.get('url')
             return stream_url
     except Exception as e:
@@ -34,32 +32,33 @@ def get_video_stream_url(link):
 
 def select_player():
     """
-    Check for omxplayer; if not found, check for mpv.
-    Returns the command (list) to call the player.
+    For output on the Waveshare screen, we use mpv with framebuffer output.
+    This requires that your Waveshare display is mapped to /dev/fb1.
     """
-    # Check if omxplayer is available
-    omx = shutil.which("omxplayer")
-    if omx:
-        print("Using omxplayer for playback.")
-        return [omx, "--no-osd"]
-    
-    # Fallback to mpv if available
-    mpv = shutil.which("mpv")
-    if mpv:
-        print("omxplayer not found; using mpv for playback.")
-        return [mpv, "--osd-level=0", "--really-quiet"]
-    
-    print("No supported media player found. Please install omxplayer or mpv.")
-    exit(1)
+    fb_device = "/dev/fb1"
+    if os.path.exists(fb_device):
+        # Build the mpv command for framebuffer output:
+        # --vo=fbdev selects the framebuffer video output.
+        # --fbdev sets the framebuffer device to use.
+        mpv_path = "mpv"
+        # Check that mpv is installed
+        if subprocess.call(["which", mpv_path], stdout=subprocess.DEVNULL) != 0:
+            print("mpv not found. Please install mpv.")
+            exit(1)
+        cmd = [mpv_path, "--osd-level=0", "--really-quiet", "--vo=fbdev", f"--fbdev={fb_device}"]
+        print(f"Using mpv with framebuffer device {fb_device} for playback.")
+        return cmd
+    else:
+        print(f"{fb_device} not found. Please ensure your Waveshare display is configured and the framebuffer device exists.")
+        exit(1)
 
 def play_video(stream_url, player_cmd):
     """
-    Calls the selected player to play the video using the direct stream URL.
+    Calls mpv to play the video using the direct stream URL.
     """
     if stream_url:
         print(f"Playing video stream: {stream_url}")
         try:
-            # Start the media player and wait until playback finishes.
             subprocess.call(player_cmd + [stream_url])
         except Exception as e:
             print(f"Error during playback: {e}")
@@ -74,9 +73,8 @@ def main():
                 play_video(stream_url, player_cmd)
             else:
                 print("Skipping due to extraction error.")
-            # Optional: wait a second between videos
+            # Wait a short moment between videos
             time.sleep(1)
 
 if __name__ == '__main__':
     main()
-
