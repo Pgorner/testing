@@ -5,12 +5,10 @@ import time
 import logging
 import cv2
 import numpy as np
+import psutil
 import st7789
 import smbus
 from PIL import Image
-
-# Path to the SD card folder with MP4 videos
-SD_CARD_PATH = "/movies"
 
 # Initialize Display
 disp = st7789.st7789()
@@ -29,18 +27,34 @@ def scan_i2c():
     bus.close()
     return devices
 
+# Function to find the SD card mount point
+def find_sd_card():
+    partitions = psutil.disk_partitions()
+    for partition in partitions:
+        if "mmcblk" in partition.device or "/media/pi" in partition.mountpoint:
+            return partition.mountpoint
+    return None
+
+# Function to get SD card size
+def get_sd_card_size(mount_point):
+    usage = psutil.disk_usage(mount_point)
+    total_gb = usage.total / (1024 ** 3)
+    return f"{total_gb:.2f} GB"
+
 # Function to get a list of MP4 videos from the SD card
-def get_video_files():
-    if not os.path.exists(SD_CARD_PATH):
-        logging.error(f"⚠️ SD card path '{SD_CARD_PATH}' not found!")
+def get_video_files(mount_point):
+    movies_path = os.path.join(mount_point, "movies")
+
+    if not os.path.exists(movies_path):
+        logging.error(f"⚠️ No '/movies' folder found on SD card ({mount_point})!")
         return []
-    
-    videos = sorted([f for f in os.listdir(SD_CARD_PATH) if f.endswith(".mp4")])
-    
+
+    videos = sorted([f for f in os.listdir(movies_path) if f.endswith(".mp4")])
+
     if not videos:
-        logging.error("⚠️ No MP4 files found in /movies!")
+        logging.error("⚠️ No MP4 files found in '/movies'!")
     
-    return [os.path.join(SD_CARD_PATH, vid) for vid in videos]
+    return [os.path.join(movies_path, vid) for vid in videos]
 
 # Function to play a video
 def play_video(video_path):
@@ -80,7 +94,16 @@ def main():
         logging.warning("⚠️ No I2C devices detected. Ensure SD card is properly connected.")
 
     while True:
-        video_files = get_video_files()
+        sd_mount = find_sd_card()
+        if not sd_mount:
+            logging.error("❌ SD card not detected! Retrying in 10 seconds...")
+            time.sleep(10)
+            continue
+
+        sd_size = get_sd_card_size(sd_mount)
+        logging.info(f"📀 SD Card detected at '{sd_mount}' ({sd_size})")
+
+        video_files = get_video_files(sd_mount)
         if not video_files:
             logging.error("❌ No valid MP4 files found. Retrying in 10 seconds...")
             time.sleep(10)
