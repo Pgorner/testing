@@ -5,21 +5,24 @@ import logging
 # Define where the SD card will be mounted
 MOUNT_PATH = "/mnt/selected_sd"
 
-def list_storage_devices():
-    """List all storage devices and their mount points."""
+def list_external_storage():
+    """List only external storage devices (ignoring the Raspberry Pi's internal SD)."""
+    devices = []
     try:
-        output = subprocess.check_output("lsblk -o NAME,MOUNTPOINT,SIZE -n", shell=True).decode()
-        devices = []
-        print("\n📂 Available Storage Devices:\n")
+        output = subprocess.check_output("lsblk -o NAME,MOUNTPOINT,SIZE,TYPE -n", shell=True).decode()
+        print("\n📂 Available External Storage Devices:\n")
+        
         for line in output.split("\n"):
             parts = line.split()
-            if parts:
-                name = parts[0]
-                mountpoint = parts[1] if len(parts) > 1 else "Not Mounted"
-                size = parts[-1]
-                device_path = f"/dev/{name}"
-                devices.append((device_path, mountpoint, size))
-                print(f"[{len(devices)}] {device_path} ({size}) ➜ {mountpoint}")
+            if len(parts) >= 4 and parts[-1] == "disk":  # Only show raw storage disks
+                device_path = f"/dev/{parts[0]}"
+                mountpoint = parts[1] if parts[1] != "─" else "Not Mounted"
+                size = parts[2]
+
+                # Ignore Raspberry Pi's main SD card (usually /dev/mmcblk0)
+                if "mmcblk0" not in device_path:
+                    devices.append((device_path, mountpoint, size))
+                    print(f"[{len(devices)}] {device_path} ({size}) ➜ {mountpoint}")
 
         return devices
     except Exception as e:
@@ -27,7 +30,7 @@ def list_storage_devices():
         return []
 
 def choose_device(devices):
-    """Prompt the user to choose a storage device."""
+    """Prompt the user to choose an external storage device."""
     while True:
         try:
             choice = int(input("\n🔍 Select a device number: "))
@@ -38,9 +41,10 @@ def choose_device(devices):
         print("⚠️ Invalid choice. Try again.")
 
 def mount_device(device):
-    """Mount the selected device."""
+    """Mount the selected device to /mnt/selected_sd."""
     os.makedirs(MOUNT_PATH, exist_ok=True)
 
+    # If already mounted, just use that path
     if os.path.ismount(MOUNT_PATH):
         print(f"✅ Already mounted at {MOUNT_PATH}")
         return True
@@ -54,9 +58,9 @@ def mount_device(device):
         return False
 
 if __name__ == "__main__":
-    devices = list_storage_devices()
+    devices = list_external_storage()
     if not devices:
-        print("❌ No storage devices found.")
+        print("❌ No external storage devices found.")
         exit(1)
 
     device, mountpoint, size = choose_device(devices)
@@ -67,4 +71,5 @@ if __name__ == "__main__":
             exit(1)
 
     print(f"\n📂 Opening: {MOUNT_PATH}\n")
-    os.system(f"cd {MOUNT_PATH} && bash")
+    os.chdir(MOUNT_PATH)
+    os.system("bash")  # Open CLI session in the mounted SD card folder
