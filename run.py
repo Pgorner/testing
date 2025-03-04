@@ -1,19 +1,25 @@
-#!/usr/bin/env python3
-import subprocess
-import time
+#!/usr/bin/python
+# -*- coding: UTF-8 -*-
 import os
+import sys
+import time
+import logging
+import st7789
+import cst816d
+from PIL import Image
+import cv2
 from yt_dlp import YoutubeDL
 
 # List your YouTube video URLs here
 VIDEO_LINKS = [
     'https://www.youtube.com/watch?v=rtRl9HZGZEE',
     'https://www.youtube.com/watch?v=mLerrgININk',
-    # Add more URLs as needed.
+    # Add more URLs as needed
 ]
 
 def get_video_stream_url(link):
     """
-    Uses yt-dlp to extract the direct stream URL for the best quality format.
+    Extracts the direct video stream URL from a YouTube link using yt-dlp.
     """
     ydl_opts = {
         'format': 'best',
@@ -27,54 +33,64 @@ def get_video_stream_url(link):
             stream_url = info.get('url')
             return stream_url
     except Exception as e:
-        print(f"Error extracting URL from {link}: {e}")
+        logging.error(f"Error extracting URL from {link}: {e}")
         return None
 
-def select_player():
+def play_youtube_video(link, disp):
     """
-    For output on the Waveshare screen, we use mpv with framebuffer output.
-    This requires that your Waveshare display is mapped to /dev/fb1.
+    Plays a YouTube video on the Waveshare display by:
+      1. Extracting the stream URL.
+      2. Opening the stream with OpenCV.
+      3. Converting each frame to a PIL image.
+      4. Resizing and displaying it on the Waveshare.
     """
-    fb_device = "/dev/fb1"
-    if os.path.exists(fb_device):
-        # Build the mpv command for framebuffer output:
-        # --vo=fbdev selects the framebuffer video output.
-        # --fbdev sets the framebuffer device to use.
-        mpv_path = "mpv"
-        # Check that mpv is installed
-        if subprocess.call(["which", mpv_path], stdout=subprocess.DEVNULL) != 0:
-            print("mpv not found. Please install mpv.")
-            exit(1)
-        cmd = [mpv_path, "--osd-level=0", "--really-quiet", "--vo=fbdev", f"--fbdev={fb_device}"]
-        print(f"Using mpv with framebuffer device {fb_device} for playback.")
-        return cmd
-    else:
-        print(f"{fb_device} not found. Please ensure your Waveshare display is configured and the framebuffer device exists.")
-        exit(1)
+    stream_url = get_video_stream_url(link)
+    if not stream_url:
+        logging.error("Skipping video due to extraction error.")
+        return
 
-def play_video(stream_url, player_cmd):
-    """
-    Calls mpv to play the video using the direct stream URL.
-    """
-    if stream_url:
-        print(f"Playing video stream: {stream_url}")
-        try:
-            subprocess.call(player_cmd + [stream_url])
-        except Exception as e:
-            print(f"Error during playback: {e}")
+    logging.info(f"Playing video: {link}")
+    cap = cv2.VideoCapture(stream_url)
+    if not cap.isOpened():
+        logging.error("Failed to open video stream.")
+        return
 
-def main():
-    player_cmd = select_player()
+    # Use display's resolution if available; adjust these defaults as needed.
+    disp_width = getattr(disp, 'width', 240)
+    disp_height = getattr(disp, 'height', 240)
+
+    fps = 30  # target framerate
+    frame_delay = 1.0 / fps
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break  # End of video stream or read error
+        # OpenCV reads frames as BGR; convert to RGB.
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        # Convert the NumPy array to a PIL Image.
+        image = Image.fromarray(frame_rgb)
+        # Resize image to match your display resolution.
+        image = image.resize((disp_width, disp_height))
+        disp.show_image(image)
+        time.sleep(frame_delay)
+
+    cap.release()
+    logging.info("Finished playing video.")
+
+if __name__=='__main__':
+    logging.basicConfig(level=logging.INFO)
+    
+    # Initialize the Waveshare display
+    disp = st7789.st7789()
+    disp.clear()
+    
+    # (Optional) Initialize touch if needed.
+    touch = cst816d.cst816d()
+    
+    # Loop through each YouTube video continuously.
     while True:
         for link in VIDEO_LINKS:
-            print(f"\nProcessing: {link}")
-            stream_url = get_video_stream_url(link)
-            if stream_url:
-                play_video(stream_url, player_cmd)
-            else:
-                print("Skipping due to extraction error.")
-            # Wait a short moment between videos
-            time.sleep(1)
-
-if __name__ == '__main__':
-    main()
+            play_youtube_video(link, disp)
+            # Pause briefly between videos if desired.
+            time.sleep(2)
