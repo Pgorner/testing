@@ -11,7 +11,7 @@ import st7789
 import cst816d
 
 # Folder containing processed videos (copy this folder to your Pi)
-PROCESSED_DIR = "/home/pi/processed"  # Adjust path if needed
+PROCESSED_DIR = "/home/patrick/processed"  # Adjust path if needed
 
 # Display resolution (adjust if different)
 DISP_WIDTH = 240
