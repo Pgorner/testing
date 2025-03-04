@@ -19,9 +19,13 @@ VIDEO_URLS = [
 # Set this flag True if you want the display in landscape mode.
 LANDSCAPE_MODE = True
 
-# For your display, specify the native resolution.
+# Native display dimensions (portrait)
 DISPLAY_WIDTH = 240
 DISPLAY_HEIGHT = 320
+
+# In landscape mode, the effective resolution is swapped: 320x240.
+# Adjust this rotation angle as needed: try 0, 90, 180, or 270.
+ROTATION_DEGREE = 270
 
 def download_video(url, output_path):
     """
@@ -66,7 +70,7 @@ def play_video(video_path, disp):
         fps = 25  # default fallback
     delay = 1.0 / fps
 
-    # For landscape mode, swap dimensions (landscape: 320x240)
+    # For landscape mode, swap dimensions (effective resolution: 320x240)
     if LANDSCAPE_MODE:
         screen_width = DISPLAY_HEIGHT  # 320
         screen_height = DISPLAY_WIDTH  # 240
@@ -83,9 +87,9 @@ def play_video(video_path, disp):
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         image = Image.fromarray(frame)
 
-        # Rotate the image: 270 degrees rotation will orient it correctly in landscape mode.
+        # Rotate the image if in landscape mode. Adjust ROTATION_DEGREE as needed.
         if LANDSCAPE_MODE:
-            image = image.rotate(270, expand=True)
+            image = image.rotate(ROTATION_DEGREE, expand=True)
 
         # Resize the image to fit the display
         image = image.resize((screen_width, screen_height))
