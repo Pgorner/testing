@@ -1,78 +1,89 @@
-#!/usr/bin/python
-# -*- coding: UTF-8 -*-
-import cv2
+import pygame
 import time
-import subprocess
-import logging
-import requests
-import numpy as np
+import sys
+from io import BytesIO
 from PIL import Image
-import st7789
+import subprocess
 
-logging.basicConfig(level=logging.INFO)
+# Configuration parameters (adjust paths and resolution as needed)
+FPS = 30
+SCREEN_WIDTH = 288
+SCREEN_HEIGHT = 240
+MJPEG_FILE = "/Videos/1/288_30fps.mjpeg"
+AAC_FILE = "/Videos/1/44100.aac"
 
-# Use the full URL including the port where Flask is running.
-STREAM_URL = "http://192.168.50.181:5000/video_feed"
-
-def stream_video_and_audio(stream_url, disp):
+def mjpeg_frame_generator(mjpeg_file_path):
     """
-    Streams video (as MJPEG) and launches mpv for audio (if available).
-    - Requests the MJPEG stream from the Flask endpoint.
-    - Parses the multipart JPEG frames.
-    - Decodes and resizes each frame before displaying on the Waveshare display.
+    Generator that yields individual JPEG frames from an MJPEG file.
+    (For simplicity, this implementation reads the whole file into memory.
+    For very large files you may want to read in chunks.)
     """
-    logging.info(f"Starting stream from: {stream_url}")
+    with open(mjpeg_file_path, "rb") as f:
+        data = f.read()
+    start = 0
+    while True:
+        # Find the start (0xFFD8) and end (0xFFD9) markers for a JPEG
+        start_index = data.find(b'\xff\xd8', start)
+        if start_index == -1:
+            break
+        end_index = data.find(b'\xff\xd9', start_index)
+        if end_index == -1:
+            break
+        jpeg_data = data[start_index:end_index+2]
+        yield jpeg_data
+        start = end_index + 2
 
-    # Start audio playback using mpv (audio-only). Note: MJPEG stream typically doesn't contain audio.
-    audio_proc = subprocess.Popen(["mpv", "--no-video", "--really-quiet", stream_url])
+def play_audio(aac_file_path):
+    """
+    Start playing the AAC file using ffplay in a separate process.
+    The '-nodisp' option hides video output, and '-autoexit' quits when done.
+    """
+    return subprocess.Popen(["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", aac_file_path])
+
+def main():
+    # Initialize Pygame and set up the display
+    pygame.init()
+    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+    pygame.display.set_caption("MJPEG Video Playback")
+    clock = pygame.time.Clock()
+
+    # Start audio playback
+    audio_process = play_audio(AAC_FILE)
     
-    try:
-        r = requests.get(stream_url, stream=True, timeout=10)
-    except Exception as e:
-        logging.error(f"Error connecting to stream: {e}")
-        audio_proc.terminate()
-        return
+    # Create a frame generator for the MJPEG file
+    frame_generator = mjpeg_frame_generator(MJPEG_FILE)
+    
+    start_time = time.time()
+    frame_count = 0
 
-    if r.status_code != 200:
-        logging.error(f"Bad response status code: {r.status_code}")
-        audio_proc.terminate()
-        return
+    # Main loop: decode and display each frame at the correct FPS
+    for jpeg_data in frame_generator:
+        # Allow graceful exit on window close
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
 
-    bytes_buffer = b""
-    # Use the display's resolution.
-    disp_width = getattr(disp, 'width', 240)
-    disp_height = getattr(disp, 'height', 320)
+        # Decode JPEG frame using Pillow
+        try:
+            image = Image.open(BytesIO(jpeg_data))
+        except Exception as e:
+            print("Error decoding frame:", e)
+            continue
+        image = image.convert("RGB")
+        frame_surface = pygame.image.fromstring(image.tobytes(), image.size, image.mode)
+        
+        # Draw the frame on the screen
+        screen.blit(frame_surface, (0, 0))
+        pygame.display.flip()
 
-    try:
-        for chunk in r.iter_content(chunk_size=1024):
-            if chunk:
-                bytes_buffer += chunk
-                a = bytes_buffer.find(b'\xff\xd8')  # JPEG start
-                b = bytes_buffer.find(b'\xff\xd9')  # JPEG end
-                if a != -1 and b != -1 and b > a:
-                    jpg = bytes_buffer[a:b+2]
-                    bytes_buffer = bytes_buffer[b+2:]
-                    # Decode the JPEG image to a numpy array.
-                    np_arr = np.frombuffer(jpg, dtype=np.uint8)
-                    frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-                    if frame is not None:
-                        # Convert BGR to RGB.
-                        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                        image = Image.fromarray(frame_rgb)
-                        image = image.resize((disp_width, disp_height))
-                        disp.show_image(image)
-                    # Small sleep to prevent overloading the display.
-                    time.sleep(0.01)
-    except Exception as e:
-        logging.error(f"Streaming error: {e}")
-    finally:
-        audio_proc.terminate()
-        logging.info("Stream ended.")
+        frame_count += 1
+        # Wait so that playback is at the target FPS
+        clock.tick(FPS)
+    
+    # Optionally, wait for audio to finish if needed
+    audio_process.wait()
+    pygame.quit()
 
-if __name__ == '__main__':
-    # Initialize the Waveshare display.
-    disp = st7789.st7789()
-    disp.clear()
-
-    # Start streaming from the specified URL.
-    stream_video_and_audio(STREAM_URL, disp)
+if __name__ == "__main__":
+    main()
