@@ -59,7 +59,7 @@ def draw_interface(current_input):
             y = INPUT_LINE_HEIGHT + row * KEY_HEIGHT
             draw.rectangle([x, y, x + KEY_WIDTH, y + KEY_HEIGHT],
                            fill=KEY_FILL_COLOR, outline=KEY_OUTLINE_COLOR)
-            # Use textbbox instead of textsize to calculate text dimensions
+            # Use textbbox instead of textsize (avoids deprecation warnings)
             bbox = draw.textbbox((0, 0), label, font=font)
             text_width = bbox[2] - bbox[0]
             text_height = bbox[3] - bbox[1]
@@ -84,19 +84,22 @@ if __name__=='__main__':
     current_input = ""
     
     while True:
-        # Draw the interface with the current input string and update the display
+        # Create the interface image
         image = draw_interface(current_input)
-        disp.show_image(image)
+        # Flip the image horizontally to correct the mirrored output
+        flipped_image = image.transpose(Image.FLIP_LEFT_RIGHT)
+        disp.show_image(flipped_image)
         
         # Read touch data and get coordinates
         touch.read_touch_data()
         point, coordinates = touch.get_touch_xy()
         if point != 0 and coordinates:
-            tx = coordinates[0]['x']
+            # Adjust the touch x-coordinate to match the flipped image.
+            tx = SCREEN_WIDTH - coordinates[0]['x']
             ty = coordinates[0]['y']
             pressed_key = None
             
-            # Determine which key is pressed based on touch coordinates
+            # Determine which key is pressed based on the adjusted touch coordinates
             for row in range(NUM_ROWS):
                 for col in range(NUM_COLS):
                     x = col * KEY_WIDTH
@@ -109,16 +112,12 @@ if __name__=='__main__':
             
             if pressed_key:
                 if pressed_key == "Del":
-                    # Remove the last character from the input string
                     current_input = current_input[:-1]
                 elif pressed_key == "Enter":
-                    # For demonstration, print the input and then clear it
                     print("Entered:", current_input)
                     current_input = ""
                 else:
-                    # Append the pressed key (digit/character) to the current input
                     current_input += pressed_key
-                # Debounce delay to avoid multiple triggers
+                # Debounce to avoid multiple rapid triggers
                 time.sleep(0.3)
-        
         time.sleep(0.02)
