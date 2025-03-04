@@ -29,10 +29,19 @@ def download_video(url, output_path):
         'format': 'mp4[height<=480]',  # limit resolution for faster processing
         'outtmpl': output_path,
         'quiet': True,
+        'http_headers': {
+            # Mimic a typical browser user agent to avoid 403 errors
+            'User-Agent': ('Mozilla/5.0 (X11; Linux x86_64) '
+                           'AppleWebKit/537.36 (KHTML, like Gecko) '
+                           'Chrome/108.0.0.0 Safari/537.36')
+        },
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         logging.info(f"Downloading {url} to {output_path}")
-        ydl.download([url])
+        try:
+            ydl.download([url])
+        except Exception as e:
+            logging.error(f"Error downloading {url}: {e}")
     return output_path
 
 def play_video(video_path, disp):
@@ -91,8 +100,7 @@ if __name__ == '__main__':
             logging.info(f"Playing video: {video_file}")
             play_video(video_file, disp)
 
-        # Optional: after one loop of videos, you can add any extra actions
-        # For example, clear the display between loops:
+        # Optional: after one loop of videos, clear the display between loops
         disp.clear()
         time.sleep(1)
 
