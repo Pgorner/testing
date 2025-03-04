@@ -1,11 +1,9 @@
 #!/usr/bin/python
 # -*- coding: UTF-8 -*-
-import os
-import sys 
 import time
 import logging
 import st7789
-import cst816d
+import cst816d  # if needed for later touch tests
 from PIL import Image, ImageDraw, ImageFont
 
 # -------------------------
@@ -13,142 +11,124 @@ from PIL import Image, ImageDraw, ImageFont
 # -------------------------
 SCREEN_WIDTH = 320
 SCREEN_HEIGHT = 240
-INPUT_LINE_HEIGHT = 40  # Top area reserved for text
 
-NUM_ROWS = 4
-NUM_COLS = 3
-KEY_WIDTH = SCREEN_WIDTH // NUM_COLS
-KEY_HEIGHT = (SCREEN_HEIGHT - INPUT_LINE_HEIGHT) // NUM_ROWS  # e.g., 50 if (240-40)/4
-
-# Numpad layout: rows are:
-# Row0: "7", "8", "9"
-# Row1: "4", "5", "6"
-# Row2: "1", "2", "3"
-# Row3: "0", "Del", "Enter"
-KEY_LAYOUT = [
-    ["7", "8", "9"],
-    ["4", "5", "6"],
-    ["1", "2", "3"],
-    ["0", "Del", "Enter"]
-]
-
-# Colors (RGB)
-BG_COLOR = (0, 0, 0)              # Black background
-INPUT_BG_COLOR = (255, 255, 255)    # White input area
-INPUT_TEXT_COLOR = (0, 0, 0)        # Black text for input area
-KEY_FILL_COLOR = (50, 50, 50)       # Dark gray for keys
-KEY_OUTLINE_COLOR = (255, 255, 255) # White outlines for keys
-KEY_TEXT_COLOR = (255, 255, 255)    # White text for keys
-
-# Use the default PIL font (or load a TTF if desired)
+# Use default font (or load a TTF if you prefer)
 font = ImageFont.load_default()
 
 # -------------------------
-# Calibration values (based on your logs)
+# Define test cases
 # -------------------------
-# Observed raw_x values:
-#   ~171 at the top (expected row0) and ~35 at the bottom (expected row3)
-RAW_MAX_X = 171.0  # corresponds to the top of key area (INPUT_LINE_HEIGHT)
-RAW_MIN_X = 35.0   # corresponds to the bottom (SCREEN_HEIGHT)
-RAW_RANGE = RAW_MAX_X - RAW_MIN_X  # ~136
+# Each test case defines a rotation (degrees, counterclockwise) and a flip mode.
+# flip can be None, "horizontal", "vertical", or "both"
+test_cases = [
+    {"rotation": 0,   "flip": None,         "description": "Rotation 0°, no flip"},
+    {"rotation": 0,   "flip": "horizontal",   "description": "Rotation 0°, horizontal flip"},
+    {"rotation": 90,  "flip": None,         "description": "Rotation 90°, no flip"},
+    {"rotation": 90,  "flip": "horizontal",   "description": "Rotation 90°, horizontal flip"},
+    {"rotation": 180, "flip": None,         "description": "Rotation 180°, no flip"},
+    {"rotation": 180, "flip": "horizontal",   "description": "Rotation 180°, horizontal flip"},
+    {"rotation": 270, "flip": None,         "description": "Rotation 270°, no flip"},
+    {"rotation": 270, "flip": "horizontal",   "description": "Rotation 270°, horizontal flip"}
+]
 
 # -------------------------
-# Drawing the interface
+# Functions to draw the test image
 # -------------------------
-def draw_interface():
-    image = Image.new("RGB", (SCREEN_WIDTH, SCREEN_HEIGHT), BG_COLOR)
+def create_base_image():
+    """
+    Create a base image that shows the four screen corners.
+    In each corner the program prints a label:
+      TL - Top Left
+      TR - Top Right
+      BL - Bottom Left
+      BR - Bottom Right
+    Additionally, red arrow lines point from near the corner toward the actual corner.
+    """
+    image = Image.new("RGB", (SCREEN_WIDTH, SCREEN_HEIGHT), (0, 0, 0))
     draw = ImageDraw.Draw(image)
-    # Draw the top input area (for reference)
-    draw.rectangle([0, 0, SCREEN_WIDTH, INPUT_LINE_HEIGHT], fill=INPUT_BG_COLOR)
-    draw.text((10, 10), "Touch a key...", font=font, fill=INPUT_TEXT_COLOR)
     
-    # Draw the numpad keys
-    for row in range(NUM_ROWS):
-        for col in range(NUM_COLS):
-            label = KEY_LAYOUT[row][col]
-            x = col * KEY_WIDTH
-            y = INPUT_LINE_HEIGHT + row * KEY_HEIGHT
-            draw.rectangle([x, y, x + KEY_WIDTH, y + KEY_HEIGHT],
-                           fill=KEY_FILL_COLOR, outline=KEY_OUTLINE_COLOR)
-            # Use textbbox to compute text size (avoids deprecation warnings)
-            bbox = draw.textbbox((0, 0), label, font=font)
-            text_width = bbox[2] - bbox[0]
-            text_height = bbox[3] - bbox[1]
-            text_x = x + (KEY_WIDTH - text_width) / 2
-            text_y = y + (KEY_HEIGHT - text_height) / 2
-            draw.text((text_x, text_y), label, font=font, fill=KEY_TEXT_COLOR)
+    # Draw corner labels in yellow
+    draw.text((5, 5), "TL", font=font, fill=(255, 255, 0))
+    draw.text((SCREEN_WIDTH - 30, 5), "TR", font=font, fill=(255, 255, 0))
+    draw.text((5, SCREEN_HEIGHT - 15), "BL", font=font, fill=(255, 255, 0))
+    draw.text((SCREEN_WIDTH - 30, SCREEN_HEIGHT - 15), "BR", font=font, fill=(255, 255, 0))
+    
+    # Draw red arrows pointing toward the corners
+    arrow_color = (255, 0, 0)
+    line_width = 3
+    # Top left arrow: from (20,20) to (0,0)
+    draw.line([(20, 20), (0, 0)], fill=arrow_color, width=line_width)
+    # Top right arrow: from (SCREEN_WIDTH-20,20) to (SCREEN_WIDTH,0)
+    draw.line([(SCREEN_WIDTH - 20, 20), (SCREEN_WIDTH, 0)], fill=arrow_color, width=line_width)
+    # Bottom left arrow: from (20, SCREEN_HEIGHT-20) to (0, SCREEN_HEIGHT)]
+    draw.line([(20, SCREEN_HEIGHT - 20), (0, SCREEN_HEIGHT)], fill=arrow_color, width=line_width)
+    # Bottom right arrow: from (SCREEN_WIDTH-20, SCREEN_HEIGHT-20) to (SCREEN_WIDTH, SCREEN_HEIGHT)]
+    draw.line([(SCREEN_WIDTH - 20, SCREEN_HEIGHT - 20), (SCREEN_WIDTH, SCREEN_HEIGHT)], fill=arrow_color, width=line_width)
+    
     return image
 
-# -------------------------
-# Transform raw touch coordinates to virtual display coordinates
-# -------------------------
-def transform_touch(raw_x, raw_y):
+def overlay_test_text(image, text):
     """
-    Map raw_x from [RAW_MAX_X, RAW_MIN_X] linearly to [INPUT_LINE_HEIGHT, SCREEN_HEIGHT].
-    Use raw_y directly as the horizontal coordinate.
+    Overlay the test case description text in the center of the image.
     """
-    # Invert raw_x so that a higher raw_x (near 171) maps to the top of the key area.
-    # Linear mapping: raw_x = RAW_MAX_X -> virtual_y = INPUT_LINE_HEIGHT,
-    #                raw_x = RAW_MIN_X -> virtual_y = SCREEN_HEIGHT.
-    virtual_y = ((RAW_MAX_X - raw_x) / RAW_RANGE) * (SCREEN_HEIGHT - INPUT_LINE_HEIGHT) + INPUT_LINE_HEIGHT
-    virtual_x = raw_y
-    return virtual_x, virtual_y
+    draw = ImageDraw.Draw(image)
+    bbox = draw.textbbox((0, 0), text, font=font)
+    text_width = bbox[2] - bbox[0]
+    text_height = bbox[3] - bbox[1]
+    x = (SCREEN_WIDTH - text_width) / 2
+    y = (SCREEN_HEIGHT - text_height) / 2
+    draw.text((x, y), text, font=font, fill=(0, 255, 0))
+    return image
+
+def apply_transformations(image, rotation, flip):
+    """
+    Apply a rotation (in degrees, counterclockwise) and an optional flip to the image.
+    The order is: first rotate, then flip if specified.
+    """
+    transformed = image.rotate(rotation, expand=False)
+    if flip is not None:
+        if flip == "horizontal":
+            transformed = transformed.transpose(Image.FLIP_LEFT_RIGHT)
+        elif flip == "vertical":
+            transformed = transformed.transpose(Image.FLIP_TOP_BOTTOM)
+        elif flip == "both":
+            transformed = transformed.transpose(Image.FLIP_LEFT_RIGHT)
+            transformed = transformed.transpose(Image.FLIP_TOP_BOTTOM)
+    return transformed
 
 # -------------------------
-# Main Test Program
+# Main test loop
 # -------------------------
-if __name__=='__main__':
+if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG)
-    disp = st7789.st7789()
+    disp = st7789.st7789()  # Initialize your display
     disp.clear()
-    touch = cst816d.cst816d()
 
-    logging.info("Starting numpad key test program with proper coordinate transformation")
-
-    while True:
-        # Draw the interface and show it
-        image = draw_interface()
-        disp.show_image(image)
+    print("Starting display orientation test.")
+    print("For each test image, note the corner labels and arrows and then input if it looks correct (y/n).")
+    
+    for test in test_cases:
+        # Create the base image and overlay the test description text.
+        base = create_base_image()
+        text = test["description"]
+        base = overlay_test_text(base, text)
         
-        # Read touch data from the sensor
-        touch.read_touch_data()
-        point, coordinates = touch.get_touch_xy()
-        if point != 0 and coordinates:
-            raw_x = coordinates[0]['x']
-            raw_y = coordinates[0]['y']
-            # Transform the raw sensor coordinates
-            virt_x, virt_y = transform_touch(raw_x, raw_y)
-            
-            # Determine which key is pressed
-            # The keys are drawn starting at y = INPUT_LINE_HEIGHT.
-            # Compute the row index from the vertical coordinate.
-            row_index = int((virt_y - INPUT_LINE_HEIGHT) // KEY_HEIGHT)
-            if row_index < 0:
-                row_index = 0
-            if row_index >= NUM_ROWS:
-                row_index = NUM_ROWS - 1
-            # Column index from the horizontal coordinate
-            col_index = int(virt_x // KEY_WIDTH)
-            if col_index < 0:
-                col_index = 0
-            if col_index >= NUM_COLS:
-                col_index = NUM_COLS - 1
+        # Apply the specified rotation and flip.
+        transformed = apply_transformations(base, test["rotation"], test["flip"])
+        
+        # Show the image on the display.
+        disp.show_image(transformed)
+        
+        # Print test case info to the console.
+        print("============================================")
+        print("Test case: " + test["description"])
+        print("Rotation: {}°, Flip: {}".format(test["rotation"], test["flip"]))
+        user_input = input("Does the printed text and arrows point correctly? (y/n) [Press Enter to continue]: ").strip().lower()
+        if user_input == "y":
+            print("Test confirmed as correct for this case.")
+        else:
+            print("Test reported as not correct for this case.")
+        print("============================================\n")
+        time.sleep(1)  # Pause before next test
 
-            mapped_key = KEY_LAYOUT[row_index][col_index]
-            
-            # Print debug information
-            print("============================================")
-            print("Raw touch coordinates: x={}, y={}".format(raw_x, raw_y))
-            print("Transformed virtual coordinates: x={:.1f}, y={:.1f}".format(virt_x, virt_y))
-            print("Computed key area: row_index={}, col_index={}".format(row_index, col_index))
-            print("Mapped key: {}".format(mapped_key))
-            
-            # Ask for user confirmation via the console
-            user_feedback = input("Please type the key you actually pressed (or press Enter if correct): ").strip()
-            if user_feedback:
-                print("User reported: {}".format(user_feedback))
-            else:
-                print("User confirmed mapping is correct.")
-            print("============================================\n")
-            time.sleep(0.5)
-        time.sleep(0.02)
+    print("Display orientation test complete.")
