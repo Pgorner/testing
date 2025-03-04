@@ -16,6 +16,9 @@ VIDEO_URLS = [
     "https://www.youtube.com/watch?v=4oi-TgKBvd4"
 ]
 
+# Set this flag True if you want the display in landscape mode.
+LANDSCAPE_MODE = True
+
 def download_video(url, output_path):
     """
     Download a YouTube video using yt_dlp.
@@ -30,7 +33,6 @@ def download_video(url, output_path):
         'outtmpl': output_path,
         'quiet': True,
         'http_headers': {
-            # Mimic a typical browser user agent to avoid 403 errors
             'User-Agent': ('Mozilla/5.0 (X11; Linux x86_64) '
                            'AppleWebKit/537.36 (KHTML, like Gecko) '
                            'Chrome/108.0.0.0 Safari/537.36')
@@ -47,8 +49,8 @@ def download_video(url, output_path):
 def play_video(video_path, disp):
     """
     Play the given video file on the Waveshare display.
-    Uses OpenCV to decode frames, converts them to PIL images, resizes,
-    and then displays them using disp.show_image.
+    Uses OpenCV to decode frames, converts them to PIL images, rotates if needed,
+    resizes, and then displays them using disp.show_image.
     """
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
@@ -60,17 +62,29 @@ def play_video(video_path, disp):
         fps = 25  # default fallback
     delay = 1.0 / fps
 
-    # Determine display dimensions
-    screen_width = disp.width if hasattr(disp, 'width') else 240
-    screen_height = disp.height if hasattr(disp, 'height') else 240
+    # Set display dimensions (adjust if necessary)
+    # If landscape mode is used, swap width and height if needed.
+    if LANDSCAPE_MODE:
+        screen_width = disp.height if hasattr(disp, 'height') else 240
+        screen_height = disp.width if hasattr(disp, 'width') else 240
+    else:
+        screen_width = disp.width if hasattr(disp, 'width') else 240
+        screen_height = disp.height if hasattr(disp, 'height') else 240
 
     while True:
         ret, frame = cap.read()
         if not ret:
             break  # End of video
-        # Convert BGR to RGB format for PIL
+
+        # Convert frame from BGR to RGB format for PIL
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         image = Image.fromarray(frame)
+
+        # Rotate the image if landscape mode is enabled.
+        # Adjust the rotation angle as needed (90 degrees here).
+        if LANDSCAPE_MODE:
+            image = image.rotate(90, expand=True)
+
         # Resize the image to fit the display
         image = image.resize((screen_width, screen_height))
         disp.show_image(image)
@@ -100,11 +114,11 @@ if __name__ == '__main__':
             logging.info(f"Playing video: {video_file}")
             play_video(video_file, disp)
 
-        # Optional: after one loop of videos, clear the display between loops
+        # Optional: clear the display between loops
         disp.clear()
         time.sleep(1)
 
-    # Optional: Touch input loop (if needed, similar to your sample code)
+    # Optional: Touch input loop (if needed)
     while True:
         touch.read_touch_data()
         point, coordinates = touch.get_touch_xy()
