@@ -1,113 +1,111 @@
 #!/usr/bin/python
 # -*- coding: UTF-8 -*-
-from PIL import Image, ImageDraw, ImageFont
+import os
+import sys
+import time
+import logging
+import cv2
+import yt_dlp
+from PIL import Image
+import st7789
+import cst816d
 
-# ------------------------------------------------------------------
-# In your custom coordinate system:
-#   - The screen is 240 (width) x 320 (height).
-#   - Top left: (0,320), top right: (240,320)
-#   - Bottom left: (0,0), bottom right: (240,0)
-# We define a conversion to the native PIL coordinate system
-# (which has (0,0) at the top left) via:
-#       pil_y = HEIGHT - custom_y
-# ------------------------------------------------------------------
-WIDTH = 240
-HEIGHT = 320
-
-def custom_to_pil(x, y_custom):
-    """Convert from custom coordinates to PIL coordinates."""
-    return (x, HEIGHT - y_custom)
-
-# ------------------------------------------------------------------
-# Layout in custom coordinates:
-#
-# Input view: spans full width and 1/4 of height.
-#   → occupies from y = 320 (top) down to y = 320 - (320/4) = 240.
-#
-# Numpad: occupies below the input view,
-#   → from y = 240 down to y = 0.
-#
-# For the numpad we use 3 rows × 3 columns.
-#   Each cell width = WIDTH/3 = 80.
-#   Each cell height = (240)/3 = 80.
-#
-# Logical numpad layout:
-#   Row 0 (top row): "1", "2", "3"
-#   Row 1: "4", "5", "6"
-#   Row 2 (bottom row): "clear", "0", "del"
-# ------------------------------------------------------------------
-INPUT_TOP = 320
-INPUT_BOTTOM = 240   # Input view height = 80 (1/4 of 320)
-NUMPAD_TOP = INPUT_BOTTOM  # 240
-NUMPAD_BOTTOM = 0
-NUM_ROWS = 3
-NUM_COLS = 3
-CELL_WIDTH = WIDTH / NUM_COLS    # 240/3 = 80
-CELL_HEIGHT = (NUMPAD_TOP - NUMPAD_BOTTOM) / NUM_ROWS  # 240/3 = 80
-
-# Define the key layout (rows in natural order from top to bottom)
-KEY_LAYOUT = [
-    ["1", "2", "3"],
-    ["4", "5", "6"],
-    ["clear", "0", "del"]
+# List of YouTube video URLs to loop
+VIDEO_URLS = [
+    "https://www.youtube.com/watch?v=VIDEO_ID1",
+    "https://www.youtube.com/watch?v=VIDEO_ID2",
+    "https://www.youtube.com/watch?v=VIDEO_ID3",
 ]
 
-# Create a new image (we use the native PIL coordinate system: 240x320)
-img = Image.new("RGB", (WIDTH, HEIGHT), "black")
-draw = ImageDraw.Draw(img)
-font = ImageFont.load_default()
+def download_video(url, output_path):
+    """
+    Download a YouTube video using yt_dlp.
+    If the file already exists, skip downloading.
+    """
+    if os.path.exists(output_path):
+        logging.info(f"{output_path} already exists. Skipping download.")
+        return output_path
 
-# ------------------------------------------------------------------
-# Draw the Input View region
-#
-# In custom coordinates, input view is the rectangle with:
-#    Top-left: (0,320)
-#    Bottom-right: (240,240)
-# Convert these points to PIL coordinates.
-# ------------------------------------------------------------------
-input_top_left = custom_to_pil(0, INPUT_TOP)       # (0,320) → (0, 320-320=0)
-input_bottom_right = custom_to_pil(WIDTH, INPUT_BOTTOM)  # (240,240) → (240,320-240=80)
-draw.rectangle([input_top_left, input_bottom_right], fill="white")
-draw.text(custom_to_pil(10, INPUT_TOP - 10), "Input:", font=font, fill="black")
-# (Here, custom_to_pil(10,310) → (10,320-310=10))
+    ydl_opts = {
+        'format': 'mp4[height<=480]',  # limit resolution for faster processing
+        'outtmpl': output_path,
+        'quiet': True,
+    }
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        logging.info(f"Downloading {url} to {output_path}")
+        ydl.download([url])
+    return output_path
 
-# ------------------------------------------------------------------
-# Draw the Numpad region
-#
-# The numpad occupies custom y from 240 down to 0.
-# For row r (0 at top of numpad, 1, 2), the cell boundaries in custom coordinates are:
-#    Top = NUMPAD_TOP - (r * CELL_HEIGHT)
-#    Bottom = NUMPAD_TOP - ((r+1) * CELL_HEIGHT)
-# For column c, the boundaries are:
-#    Left = c * CELL_WIDTH, Right = (c+1) * CELL_WIDTH.
-# ------------------------------------------------------------------
-for r in range(NUM_ROWS):
-    for c in range(NUM_COLS):
-        cell_left = c * CELL_WIDTH
-        cell_right = (c + 1) * CELL_WIDTH
-        cell_top = NUMPAD_TOP - (r * CELL_HEIGHT)
-        cell_bottom = NUMPAD_TOP - ((r + 1) * CELL_HEIGHT)
-        # Convert cell rectangle to PIL coordinates:
-        pil_top_left = custom_to_pil(cell_left, cell_top)
-        pil_bottom_right = custom_to_pil(cell_right, cell_bottom)
-        draw.rectangle([pil_top_left, pil_bottom_right], outline="white", fill="gray")
-        
-        # Draw the key label centered in the cell.
-        key_label = KEY_LAYOUT[r][c]
-        bbox = draw.textbbox((0, 0), key_label, font=font)
-        text_width = bbox[2] - bbox[0]
-        text_height = bbox[3] - bbox[1]
-        # Compute the center of the cell in custom coordinates:
-        center_x = (cell_left + cell_right) / 2
-        center_y = (cell_top + cell_bottom) / 2
-        # Convert center to PIL coordinates:
-        pil_center = custom_to_pil(center_x, center_y)
-        text_x = pil_center[0] - text_width / 2
-        text_y = pil_center[1] - text_height / 2
-        draw.text((text_x, text_y), key_label, font=font, fill="white")
+def play_video(video_path, disp):
+    """
+    Play the given video file on the Waveshare display.
+    Uses OpenCV to decode frames, converts them to PIL images, resizes,
+    and then displays them using disp.show_image.
+    """
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        logging.error(f"Failed to open video file: {video_path}")
+        return
 
-# ------------------------------------------------------------------
-# Show and save the resulting image
-# ------------------------------------------------------------------
-img.show()
-img.save("custom_numpad.png")
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    if fps == 0:
+        fps = 25  # default fallback
+    delay = 1.0 / fps
+
+    # Determine display dimensions
+    screen_width = disp.width if hasattr(disp, 'width') else 240
+    screen_height = disp.height if hasattr(disp, 'height') else 240
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break  # End of video
+        # Convert BGR to RGB format for PIL
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        image = Image.fromarray(frame)
+        # Resize the image to fit the display
+        image = image.resize((screen_width, screen_height))
+        disp.show_image(image)
+        time.sleep(delay)
+
+    cap.release()
+
+if __name__ == '__main__':
+    # Setup logging
+    logging.basicConfig(level=logging.INFO)
+    
+    # Initialize Waveshare display and touch controller
+    disp = st7789.st7789()
+    disp.clear()
+    touch = cst816d.cst816d()
+
+    # Prepare local filenames for downloaded videos
+    downloaded_videos = []
+    for index, url in enumerate(VIDEO_URLS):
+        video_filename = f"video_{index+1}.mp4"
+        download_video(url, video_filename)
+        downloaded_videos.append(video_filename)
+
+    # Main loop: play each video in sequence and then loop back
+    while True:
+        for video_file in downloaded_videos:
+            logging.info(f"Playing video: {video_file}")
+            play_video(video_file, disp)
+
+        # Optional: after one loop of videos, you can add any extra actions
+        # For example, clear the display between loops:
+        disp.clear()
+        time.sleep(1)
+
+    # Optional: Touch input loop (if needed, similar to your sample code)
+    while True:
+        touch.read_touch_data()
+        point, coordinates = touch.get_touch_xy()
+        if point != 0 and coordinates:
+            disp.dre_rectangle(
+                coordinates[0]['x'], coordinates[0]['y'],
+                coordinates[0]['x'] + 5, coordinates[0]['y'] + 5,
+                0x00ff  # rectangle color
+            )
+            print(f"Touch coordinates: x={coordinates[0]['x']}, y={coordinates[0]['y']}")
+        time.sleep(0.02)
