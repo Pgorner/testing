@@ -64,11 +64,13 @@ def play_video(video_path, disp):
     if not cap.isOpened():
         logging.error(f"Failed to open video file: {video_path}")
         return
-
+    
     fps = cap.get(cv2.CAP_PROP_FPS)
     if fps == 0:
         fps = 25  # default fallback
-    delay = 1.0 / fps
+    effective_fps = min(fps, 20)
+    delay = 1.0 / effective_fps
+
 
     # For landscape mode, swap dimensions (effective resolution: 320x240)
     if LANDSCAPE_MODE:
