@@ -4,8 +4,8 @@ from PIL import Image, ImageDraw, ImageFont
 
 # Import your display and touch libraries.
 # (Make sure these libraries are installed and that the constructors below match your wiring.)
-import ST7789T3
-import CST816D
+import st7789
+import cst816d
 
 # -------------------------
 # Configuration parameters
