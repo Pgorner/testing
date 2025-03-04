@@ -42,7 +42,8 @@ def play_youtube_video(link, disp):
       1. Extracting the stream URL.
       2. Opening the stream with OpenCV.
       3. Converting each frame to a PIL image.
-      4. Resizing and displaying it on the Waveshare.
+      4. Rotating 90 degrees, resizing and displaying it on the Waveshare.
+      5. Matching the playback speed to the video FPS.
     """
     stream_url = get_video_stream_url(link)
     if not stream_url:
@@ -59,10 +60,15 @@ def play_youtube_video(link, disp):
     disp_width = getattr(disp, 'width', 240)
     disp_height = getattr(disp, 'height', 240)
 
-    fps = 30  # target framerate
+    # Try to get FPS from the capture; if not available, default to 30.
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    if fps == 0 or fps is None:
+        fps = 30
     frame_delay = 1.0 / fps
+    logging.info(f"Video FPS: {fps:.2f}, frame delay: {frame_delay:.3f} seconds")
 
     while True:
+        start_time = time.time()
         ret, frame = cap.read()
         if not ret:
             break  # End of video stream or read error
@@ -70,10 +76,16 @@ def play_youtube_video(link, disp):
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         # Convert the NumPy array to a PIL Image.
         image = Image.fromarray(frame_rgb)
+        # Rotate image 90° (clockwise). 'expand=True' ensures the dimensions adjust.
+        image = image.rotate(90, expand=True)
         # Resize image to match your display resolution.
         image = image.resize((disp_width, disp_height))
         disp.show_image(image)
-        time.sleep(frame_delay)
+        # Adjust delay to match the video's framerate.
+        elapsed = time.time() - start_time
+        sleep_time = frame_delay - elapsed
+        if sleep_time > 0:
+            time.sleep(sleep_time)
 
     cap.release()
     logging.info("Finished playing video.")
@@ -81,7 +93,7 @@ def play_youtube_video(link, disp):
 if __name__=='__main__':
     logging.basicConfig(level=logging.INFO)
     
-    # Initialize the Waveshare display
+    # Initialize the Waveshare display.
     disp = st7789.st7789()
     disp.clear()
     
