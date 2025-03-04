@@ -49,10 +49,8 @@ def play_video_file(video_file, disp):
         
         # Convert from BGR to RGB.
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        # Rotate 90° clockwise using OpenCV.
-        rotated = cv2.rotate(frame_rgb, cv2.ROTATE_90_CLOCKWISE)
         # Convert to PIL Image.
-        image = Image.fromarray(rotated)
+        image = Image.fromarray(frame_rgb)
         disp.show_image(image)
         
         elapsed = time.time() - start_time
