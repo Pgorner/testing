@@ -5,7 +5,6 @@ import sys
 import time
 import logging
 import subprocess
-import cv2
 import numpy as np
 from PIL import Image
 import st7789
@@ -42,11 +41,10 @@ def preprocess_video(video_path):
     display-ready RGB NumPy arrays (with rotation, flip, and resizing applied),
     and saving them as .npy files in a folder:
         processed/<video_basename_without_ext>/
-    If a marker file exists, the processing is skipped.
+    If the marker file exists, the processing is skipped.
     """
     base = os.path.splitext(os.path.basename(video_path))[0]
     processed_folder = os.path.join(PROCESSED_DIR, base)
-    # We'll check for a marker file to indicate that processing is complete.
     marker_file = os.path.join(processed_folder, "frame_0001.npy")
     if os.path.exists(marker_file):
         logging.info(f"Processed RGB frames for '{video_path}' already exist in '{processed_folder}'. Skipping preprocessing.")
@@ -57,7 +55,6 @@ def preprocess_video(video_path):
 
     # Determine target dimensions.
     if LANDSCAPE_MODE:
-        # In landscape mode, our target dimensions are swapped.
         target_width = DISPLAY_HEIGHT  # e.g. 320
         target_height = DISPLAY_WIDTH  # e.g. 240
     else:
@@ -93,7 +90,7 @@ def preprocess_video(video_path):
             if LANDSCAPE_MODE:
                 img = img.rotate(ROTATION_DEGREE, expand=True).transpose(Image.FLIP_LEFT_RIGHT)
             # The frame should already be at target dimensions from FFmpeg,
-            # but you can call resize() just to be safe.
+            # but we call resize() just to be safe.
             img = img.resize((target_width, target_height))
             arr = np.array(img)
             # Save the array as .npy file.
@@ -103,7 +100,7 @@ def preprocess_video(video_path):
         except Exception as e:
             logging.error(f"Error processing frame '{frame_path}': {e}")
 
-    # Optionally, clean up the temporary BMP files.
+    # Clean up the temporary BMP files.
     for f in bmp_files:
         os.remove(f)
     os.rmdir(temp_folder)
@@ -113,14 +110,13 @@ def preprocess_video(video_path):
 
 def play_processed_video(processed_folder, original_video_path, disp, fps=15.0):
     """
-    Plays a preprocessed video (frames stored as display‑ready .npy RGB arrays)
+    Plays a preprocessed video (frames stored as display-ready .npy RGB arrays)
     with synchronized audio.
     
     - Audio is played concurrently using ffplay (from the original video file).
-    - .npy frames are loaded once, converted to PIL images once, and then iterated
-      over at the given FPS.
-    - Since frames are preprocessed and pre‑converted, minimal work is done per frame.
-    - A print statement shows each frame's number and the elapsed time.
+    - The .npy frames are loaded once into memory.
+    - They are then passed directly to disp.show_image with no further conversion.
+    - Timing is managed with a high-resolution timer.
     """
     # Get sorted list of .npy frame files.
     frame_files = sorted([
@@ -150,69 +146,60 @@ def play_processed_video(processed_folder, original_video_path, disp, fps=15.0):
     )
     logging.info("Marker: Sound started")
 
-    # Preload and convert all frames into display‑ready PIL images.
-    preloaded_images = []
+    # Preload all frames as NumPy arrays.
+    preloaded_frames = []
     for npy_file in frame_files:
         try:
             arr = np.load(npy_file)
-            # Since we already applied rotation/flip/resizing during preprocessing,
-            # converting to a PIL image is all that's needed.
-            img = Image.fromarray(arr)
-            preloaded_images.append(img)
+            preloaded_frames.append(arr)
         except Exception as e:
             logging.error(f"Error loading npy frame '{npy_file}': {e}")
-    logging.info(f"Preloaded {len(preloaded_images)} frames from '{processed_folder}'")
+    logging.info(f"Preloaded {len(preloaded_frames)} frames from '{processed_folder}'")
 
-    # Use a high-resolution timer.
+    # Use high-resolution timer.
     start_time = time.perf_counter()
     logging.info("Marker: Images start")
-    for frame_number, image in enumerate(preloaded_images):
-        # Compute the expected display time.
+    for frame_number, arr in enumerate(preloaded_frames):
         expected_time = frame_number / fps
         current_time = time.perf_counter() - start_time
         if expected_time > current_time:
             time.sleep(expected_time - current_time)
-
-        # Show the preconverted image. No further conversion needed.
-        disp.show_image(image)
-
+        # Directly pass the NumPy array to disp.show_image if possible.
+        # If disp.show_image accepts only PIL images, you might have to convert.
+        # If so, try to cache the conversion.
+        disp.show_image(arr)  # Assuming the driver accepts a NumPy array.
         print(f"Frame {frame_number:04d} displayed at {time.perf_counter() - start_time:.3f} sec")
 
+    logging.info("Marker: Images stopped")
     audio_proc.wait()
-
+    logging.info("Marker: Sound stopped")
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
     
-    # Ensure the processed directory exists.
     os.makedirs(PROCESSED_DIR, exist_ok=True)
 
-    # Initialize Waveshare display and touch controller.
     disp = st7789.st7789()
     disp.clear()
     touch = cst816d.cst816d()
 
-    # Get list of video files from VIDEO_DIR.
     video_files = get_video_list(VIDEO_DIR)
     if not video_files:
         logging.error("No video files found in folder '{}'".format(VIDEO_DIR))
         sys.exit(1)
     logging.info("Found videos: " + ", ".join(video_files))
 
-    # Preprocess each video if needed.
     processed_videos = []  # List of tuples: (processed_folder, original_video_path)
     for video_file in video_files:
         processed_folder = preprocess_video(video_file)
         processed_videos.append((processed_folder, video_file))
 
-    # Main playback loop: cycle through videos.
     while True:
         for processed_folder, original_video_path in processed_videos:
             play_processed_video(processed_folder, original_video_path, disp, fps=15.0)
             disp.clear()
             time.sleep(1)
 
-    # Optional: Touch input loop (if needed).
     while True:
         touch.read_touch_data()
         point, coordinates = touch.get_touch_xy()
@@ -220,7 +207,7 @@ if __name__ == '__main__':
             disp.dre_rectangle(
                 coordinates[0]['x'], coordinates[0]['y'],
                 coordinates[0]['x'] + 5, coordinates[0]['y'] + 5,
-                0x00ff  # rectangle color
+                0x00ff
             )
             print(f"Touch coordinates: x={coordinates[0]['x']}, y={coordinates[0]['y']}")
         time.sleep(0.02)
