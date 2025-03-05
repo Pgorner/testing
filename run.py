@@ -11,7 +11,7 @@ import st7789
 import cst816d
 
 # Directories
-VIDEO_DIR = "15fpsd"     # Folder where the original 15 FPS videos are stored.
+VIDEO_DIR = "15fpsd"         # Folder where the original 15 FPS videos are stored.
 PROCESSED_DIR = "processed"  # Base folder to hold processed frames.
 
 # Set this flag True if you want the display in landscape mode.
@@ -78,6 +78,7 @@ def play_processed_video(processed_folder, original_video_path, disp, fps=15.0):
     - Audio is played concurrently using ffplay (from the original video file).
     - Frames are loaded from the processed folder and displayed at the given FPS.
     - If in landscape mode, the frame is rotated and flipped as needed.
+    - Logging markers indicate when images start, when they stop, and when the sound stops.
     """
     # Get sorted list of frame file names.
     frame_files = sorted([
@@ -101,9 +102,11 @@ def play_processed_video(processed_folder, original_video_path, disp, fps=15.0):
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL
     )
+    logging.info("Marker: Sound started")
 
     # Synchronize display based on FPS.
     start_time = time.time()
+    logging.info("Marker: Images start")
     for frame_number, frame_path in enumerate(frame_files):
         # Calculate the expected display time.
         expected_time = frame_number / fps
@@ -122,11 +125,13 @@ def play_processed_video(processed_folder, original_video_path, disp, fps=15.0):
             image = image.rotate(ROTATION_DEGREE, expand=True)
             image = image.transpose(Image.FLIP_LEFT_RIGHT)
 
-        # In this case, frames are already scaled, but you can resize if needed:
+        # Even though frames are already scaled, resize if necessary.
         image = image.resize((screen_width, screen_height))
         disp.show_image(image)
 
+    logging.info("Marker: Images stopped")
     audio_proc.wait()  # Wait for audio to finish
+    logging.info("Marker: Sound stopped")
 
 if __name__ == '__main__':
     # Setup logging
