@@ -6,16 +6,12 @@ import time
 import logging
 import subprocess
 import cv2
-import yt_dlp
 from PIL import Image
 import st7789
 import cst816d
 
-# List of YouTube video URLs to loop
-VIDEO_URLS = [
-    "https://www.youtube.com/watch?v=rtRl9HZGZEE",
-    "https://www.youtube.com/watch?v=4oi-TgKBvd4"
-]
+# Directory containing pre-converted videos
+VIDEO_DIR = "vids"
 
 # Set this flag True if you want the display in landscape mode.
 LANDSCAPE_MODE = True
@@ -28,53 +24,15 @@ DISPLAY_HEIGHT = 320
 # Adjust this rotation angle as needed: try 0, 90, 180, or 270.
 ROTATION_DEGREE = 0
 
-def download_video(url, output_path):
+def get_video_list(directory):
     """
-    Download a YouTube video using yt_dlp.
-    If the file already exists, skip downloading.
+    Returns a sorted list of full paths to MP4 videos in the specified directory.
     """
-    if os.path.exists(output_path):
-        logging.info(f"{output_path} already exists. Skipping download.")
-        return output_path
-
-    ydl_opts = {
-        'format': 'mp4[height<=480]',  # limit resolution for faster processing
-        'outtmpl': output_path,
-        'quiet': True,
-        'http_headers': {
-            'User-Agent': ('Mozilla/5.0 (X11; Linux x86_64) '
-                           'AppleWebKit/537.36 (KHTML, like Gecko) '
-                           'Chrome/108.0.0.0 Safari/537.36')
-        },
-    }
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        logging.info(f"Downloading {url} to {output_path}")
-        try:
-            ydl.download([url])
-        except Exception as e:
-            logging.error(f"Error downloading {url}: {e}")
-    return output_path
-
-def reencode_video_to_20fps(input_file, output_file):
-    """
-    Use FFmpeg to re-encode the video to 20 FPS while preserving the original duration and audio.
-    The '-r 20' option forces the video stream to output at 20 FPS,
-    dropping frames as necessary without slowing down the overall playback.
-    """
-    cmd = [
-        "ffmpeg",
-        "-y",                    # Overwrite output file if it exists
-        "-i", input_file,
-        "-r", "20",              # Force output to 20 FPS
-        "-c:a", "copy",          # Copy audio without re-encoding
-        output_file
-    ]
-    logging.info("Re-encoding video to 20 FPS with command: " + " ".join(cmd))
-    try:
-        subprocess.run(cmd, check=True)
-    except subprocess.CalledProcessError as e:
-        logging.error("FFmpeg re-encoding failed: " + str(e))
-    return output_file
+    videos = []
+    for filename in sorted(os.listdir(directory)):
+        if filename.lower().endswith(".mp4"):
+            videos.append(os.path.join(directory, filename))
+    return videos
 
 def play_video(video_path, disp):
     """
@@ -91,7 +49,7 @@ def play_video(video_path, disp):
 
     # We are forcing playback at 20 FPS.
     fps = 20.0
-    logging.info(f"Playing video at {fps} FPS")
+    logging.info(f"Playing video: {video_path} at {fps} FPS")
     
     # Determine display dimensions
     if LANDSCAPE_MODE:
@@ -149,22 +107,17 @@ if __name__ == '__main__':
     disp.clear()
     touch = cst816d.cst816d()
 
-    # Prepare local filenames for downloaded and re-encoded videos.
-    # Download the original video to a temporary file, then convert it.
-    downloaded_videos = []
-    for index, url in enumerate(VIDEO_URLS):
-        orig_filename = f"video_{index+1}_orig.mp4"
-        final_filename = f"video_{index+1}.mp4"
-        download_video(url, orig_filename)
-        reencode_video_to_20fps(orig_filename, final_filename)
-        downloaded_videos.append(final_filename)
-        # Optionally, remove the original file if no longer needed.
-        # os.remove(orig_filename)
+    # Get the list of video files from the "vids" folder
+    video_files = get_video_list(VIDEO_DIR)
+    if not video_files:
+        logging.error("No video files found in folder 'vids'")
+        sys.exit(1)
+
+    logging.info("Found videos: " + ", ".join(video_files))
 
     # Main loop: play each video in sequence and then loop back.
     while True:
-        for video_file in downloaded_videos:
-            logging.info(f"Playing video: {video_file}")
+        for video_file in video_files:
             play_video(video_file, disp)
 
         # Clear the display between loops
