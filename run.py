@@ -2,97 +2,128 @@
 # -*- coding: UTF-8 -*-
 import os
 import sys
-import subprocess
+import time
 import logging
+import subprocess
 import numpy as np
 from PIL import Image
+import st7789
+import cst816d
 
-# Base folder to hold processed frame subfolders.
-PROCESSED_DIR = "processed"
+PROCESSED_DIR = "processed"  # Base folder containing subfolders for each video
 
-# Settings matching your display configuration.
+# Set this flag True if you want the display in landscape mode.
 LANDSCAPE_MODE = True
+
+# Native display dimensions (portrait)
 DISPLAY_WIDTH = 240
 DISPLAY_HEIGHT = 320
-ROTATION_DEGREE = 0  # Options: 0, 90, 180, 270
 
-def process_video(input_video_path, output_subfolder, fps=10):
+ROTATION_DEGREE = 0
+
+def play_processed_video(processed_folder, original_video_path, disp, fps=10.0):
     """
-    Process the input video with ffmpeg:
-      - Extract frames at the specified fps.
-      - Resize frames to the target dimensions.
-      - Rotate frames if needed.
-      - Save frames as PNGs, then convert each to a .npy file.
-    The PNG files are removed after conversion.
+    Plays a video using frames from the processed_folder at a given FPS.
+    If an original_video_path is provided and exists, its audio is played concurrently using ffplay.
     """
-    os.makedirs(output_subfolder, exist_ok=True)
-    
-    # Determine the target width and height.
-    if LANDSCAPE_MODE:
-        width = DISPLAY_HEIGHT  # 320
-        height = DISPLAY_WIDTH  # 240
-    else:
-        width = DISPLAY_WIDTH   # 240
-        height = DISPLAY_HEIGHT # 320
-
-    # Build the ffmpeg video filter string.
-    # Start with fps and scale.
-    vf_filters = f"fps={fps},scale={width}:{height}"
-    
-    # Append rotation filters if necessary.
-    # ffmpeg's transpose filter rotates 90 degrees clockwise (transpose=1) or counter-clockwise (transpose=2).
-    if ROTATION_DEGREE == 90:
-        vf_filters += ",transpose=1"
-    elif ROTATION_DEGREE == 180:
-        # Apply two 90-degree rotations.
-        vf_filters += ",transpose=1,transpose=1"
-    elif ROTATION_DEGREE == 270:
-        vf_filters += ",transpose=2"
-    
-    # Define output pattern for PNG images.
-    output_pattern = os.path.join(output_subfolder, "frame_%04d.png")
-    cmd = [
-        "ffmpeg",
-        "-i", input_video_path,
-        "-vf", vf_filters,
-        output_pattern
-    ]
-    logging.info("Running ffmpeg command: " + " ".join(cmd))
-    subprocess.run(cmd, check=True)
-
-    # Convert extracted PNG frames to .npy files.
+    # Get sorted list of .npy frame files.
     frame_files = sorted([
-        os.path.join(output_subfolder, f)
-        for f in os.listdir(output_subfolder)
-        if f.lower().endswith(".png")
+        os.path.join(processed_folder, f)
+        for f in os.listdir(processed_folder)
+        if f.lower().endswith(".npy")
     ])
-    for png_file in frame_files:
+    if not frame_files:
+        logging.error(f"No processed frames found in folder '{processed_folder}'.")
+        return
+
+    logging.info(f"Playing video from '{processed_folder}' at {fps} FPS")
+
+    # Determine display dimensions (frames are already at target dimensions).
+    if LANDSCAPE_MODE:
+        screen_width = DISPLAY_HEIGHT
+        screen_height = DISPLAY_WIDTH
+    else:
+        screen_width = DISPLAY_WIDTH
+        screen_height = DISPLAY_HEIGHT
+
+    # Start audio playback using ffplay (if a valid video file is provided).
+    if original_video_path and os.path.exists(original_video_path):
+        audio_proc = subprocess.Popen(
+            ["ffplay", "-nodisp", "-autoexit", "-vn", original_video_path],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+        logging.info("Audio playback started.")
+    else:
+        audio_proc = None
+        if original_video_path:
+            logging.warning(f"Audio file '{original_video_path}' not found. Skipping audio playback.")
+
+    # Preload all frames and convert them to PIL Images.
+    preloaded_images = []
+    for npy_file in frame_files:
         try:
-            img = Image.open(png_file)
-            arr = np.array(img)
-            npy_file = os.path.splitext(png_file)[0] + ".npy"
-            np.save(npy_file, arr)
+            arr = np.load(npy_file)
+            img = Image.fromarray(arr)
+            preloaded_images.append(img)
         except Exception as e:
-            logging.error(f"Error processing {png_file}: {e}")
-    
-    # Optionally, remove the PNG files.
-    for png_file in frame_files:
-        os.remove(png_file)
-    
-    logging.info(f"Processed {len(frame_files)} frames from video '{input_video_path}' into folder '{output_subfolder}'")
+            logging.error(f"Error loading npy frame '{npy_file}': {e}")
+    logging.info(f"Preloaded {len(preloaded_images)} frames from '{processed_folder}'")
+
+    # Main playback loop with high resolution timing.
+    start_time = time.perf_counter()
+    logging.info("Starting frame display...")
+    frame_interval = 1.0 / fps  # Expected time per frame (0.1 sec for 10fps)
+    for frame_number, image in enumerate(preloaded_images):
+        expected_time = frame_number * frame_interval
+        # Calculate time to wait.
+        delta = expected_time - (time.perf_counter() - start_time)
+        if delta > 0.005:
+            time.sleep(delta - 0.005)
+        while time.perf_counter() - start_time < expected_time:
+            pass
+
+        # Display the preloaded PIL image.
+        disp.show_image(image)
+        print(f"Frame {frame_number:04d} displayed at {time.perf_counter() - start_time:.3f} sec")
+
+    logging.info("Finished displaying frames.")
+
+    if audio_proc:
+        audio_proc.wait()
+        logging.info("Audio playback finished.")
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
-    
-    if len(sys.argv) < 2:
-        print("Usage: process_video.py <input_video_file>")
-        sys.exit(1)
-    
-    input_video_path = sys.argv[1]
-    # Use the base name of the video (without extension) as the subfolder name.
-    video_name = os.path.splitext(os.path.basename(input_video_path))[0]
-    output_subfolder = os.path.join(PROCESSED_DIR, video_name)
-    
+
+    # Ensure the processed folder exists.
     os.makedirs(PROCESSED_DIR, exist_ok=True)
-    
-    process_video(input_video_path, output_subfolder, fps=10)
+
+    # Initialize display and touch (touch is not used further here).
+    disp = st7789.st7789()
+    disp.clear()
+    touch = cst816d.cst816d()
+
+    # Determine the list of subfolders in the processed folder.
+    processed_subfolders = [
+        os.path.join(PROCESSED_DIR, d)
+        for d in os.listdir(PROCESSED_DIR)
+        if os.path.isdir(os.path.join(PROCESSED_DIR, d))
+    ]
+    if not processed_subfolders:
+        logging.error(f"No subfolders found in '{PROCESSED_DIR}'.")
+        sys.exit(1)
+
+    # Optionally, you could provide an original video file for audio via command line,
+    # but here we assume that each subfolder only contains frame data.
+    original_video_path = None
+    if len(sys.argv) > 1:
+        original_video_path = sys.argv[1]
+
+    # Loop over each subfolder and play the video.
+    while True:
+        for subfolder in processed_subfolders:
+            logging.info(f"Now playing video from subfolder: {subfolder}")
+            play_processed_video(subfolder, original_video_path, disp, fps=10.0)
+            disp.clear()
+            time.sleep(1)  # Short pause between videos
