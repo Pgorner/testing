@@ -12,7 +12,7 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
 def play_video(video_folder):
     """
-    Plays the video composed of an audio file (audio.aac) and image sequence
+    Plays the video composed of an audio file (audio.aac) and an image sequence
     (frame_%04d.png) from the given folder.
     """
     audio_path = os.path.join(video_folder, "audio.aac")
@@ -40,7 +40,11 @@ def play_video(video_folder):
         "-i", audio_path,
         "-c:v", "libx264",
         "-pix_fmt", "yuv420p",
-        "-c:a", "copy",
+        # Re-encode audio with AAC at 128kbps instead of copying
+        "-c:a", "aac",
+        "-b:a", "128k",
+        # End the output when the shortest input ends
+        "-shortest",
         "-f", "matroska",
         "-"  # Output to stdout
     ]
