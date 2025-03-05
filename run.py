@@ -57,16 +57,16 @@ def download_video(url, output_path):
 
 def reencode_video_to_20fps(input_file, output_file):
     """
-    Use FFmpeg to re-encode the video to 20 FPS while keeping the original duration.
-    The command uses the -r option as an output parameter to force the frame rate,
-    which will drop extra frames if needed but preserve the overall playback speed and audio sync.
+    Use FFmpeg to re-encode the video to 20 FPS while preserving the original duration and audio.
+    The '-r 20' option forces the video stream to output at 20 FPS,
+    dropping frames as necessary without slowing down the overall playback.
     """
     cmd = [
         "ffmpeg",
         "-y",                    # Overwrite output file if it exists
         "-i", input_file,
-        "-r", "20",              # Set output frame rate to 20 FPS
-        "-c:a", "copy",          # Copy the audio stream without re-encoding
+        "-r", "20",              # Force output to 20 FPS
+        "-c:a", "copy",          # Copy audio without re-encoding
         output_file
     ]
     logging.info("Re-encoding video to 20 FPS with command: " + " ".join(cmd))
@@ -78,20 +78,22 @@ def reencode_video_to_20fps(input_file, output_file):
 
 def play_video(video_path, disp):
     """
-    Play the given video file on the Waveshare display.
-    Uses OpenCV to decode frames, converts them to PIL images, rotates if needed,
-    resizes, and then displays them using disp.show_image.
+    Play the given video file on the Waveshare display with synchronized audio.
+    This function:
+      - Launches FFplay in a subprocess to play the audio (with no video display).
+      - Reads video frames with OpenCV and synchronizes frame display to 20 FPS.
+      - Adjusts (rotates and flips) the frame for landscape mode.
     """
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         logging.error(f"Failed to open video file: {video_path}")
         return
 
-    # Optionally, check the FPS (should be 20 now)
-    fps = cap.get(cv2.CAP_PROP_FPS)
+    # We are forcing playback at 20 FPS.
+    fps = 20.0
     logging.info(f"Playing video at {fps} FPS")
     
-    # For landscape mode, swap dimensions (effective resolution: 320x240)
+    # Determine display dimensions
     if LANDSCAPE_MODE:
         screen_width = DISPLAY_HEIGHT  # 240
         screen_height = DISPLAY_WIDTH  # 320
@@ -99,27 +101,44 @@ def play_video(video_path, disp):
         screen_width = DISPLAY_WIDTH
         screen_height = DISPLAY_HEIGHT
 
+    # Start audio playback using ffplay (audio only)
+    # '-nodisp' disables video display, '-vn' disables video decoding.
+    audio_proc = subprocess.Popen(
+        ["ffplay", "-nodisp", "-autoexit", "-vn", video_path],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL
+    )
+
+    # Use a timing loop to display frames at exactly 20 FPS.
+    start_time = time.time()
+    frame_number = 0
     while True:
         ret, frame = cap.read()
         if not ret:
             break  # End of video
 
+        # Calculate when this frame should be displayed
+        expected_time = frame_number * (1.0 / fps)
+        current_time = time.time() - start_time
+        if expected_time > current_time:
+            time.sleep(expected_time - current_time)
+
         # Convert frame from BGR (OpenCV) to RGB (PIL)
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         image = Image.fromarray(frame)
 
-        # Rotate the image if in landscape mode. Adjust ROTATION_DEGREE as needed.
+        # If in landscape mode, rotate and flip the image as needed.
         if LANDSCAPE_MODE:
             image = image.rotate(ROTATION_DEGREE, expand=True)
-            # Correct the mirror effect if necessary.
             image = image.transpose(Image.FLIP_LEFT_RIGHT)
 
-        # Resize the image to fit the display
+        # Resize the image to fit the display.
         image = image.resize((screen_width, screen_height))
         disp.show_image(image)
-        # No delay is needed as the video file is encoded at 20 FPS
+        frame_number += 1
 
     cap.release()
+    audio_proc.wait()  # Wait for audio playback to finish
 
 if __name__ == '__main__':
     # Setup logging
@@ -131,7 +150,7 @@ if __name__ == '__main__':
     touch = cst816d.cst816d()
 
     # Prepare local filenames for downloaded and re-encoded videos.
-    # We download the original video to a temporary file, then convert it.
+    # Download the original video to a temporary file, then convert it.
     downloaded_videos = []
     for index, url in enumerate(VIDEO_URLS):
         orig_filename = f"video_{index+1}_orig.mp4"
