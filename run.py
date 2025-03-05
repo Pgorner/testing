@@ -21,10 +21,11 @@ DISPLAY_HEIGHT = 320
 
 ROTATION_DEGREE = 0
 
-def play_processed_video(processed_folder, original_video_path, disp, fps=10.0):
+def play_processed_video(processed_folder, disp, fps=10.0):
     """
     Plays a video using frames from the processed_folder at a given FPS.
-    If an original_video_path is provided and exists, its audio is played concurrently using ffplay.
+    Also plays the corresponding audio (audio.mp3 in the same folder) concurrently,
+    adjusting the audio playback speed to match the video's intended duration.
     """
     # Get sorted list of .npy frame files.
     frame_files = sorted([
@@ -46,19 +47,6 @@ def play_processed_video(processed_folder, original_video_path, disp, fps=10.0):
         screen_width = DISPLAY_WIDTH
         screen_height = DISPLAY_HEIGHT
 
-    # Start audio playback using ffplay (if a valid video file is provided).
-    if original_video_path and os.path.exists(original_video_path):
-        audio_proc = subprocess.Popen(
-            ["ffplay", "-nodisp", "-autoexit", "-vn", original_video_path],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
-        )
-        logging.info("Audio playback started.")
-    else:
-        audio_proc = None
-        if original_video_path:
-            logging.warning(f"Audio file '{original_video_path}' not found. Skipping audio playback.")
-
     # Preload all frames and convert them to PIL Images.
     preloaded_images = []
     for npy_file in frame_files:
@@ -68,7 +56,52 @@ def play_processed_video(processed_folder, original_video_path, disp, fps=10.0):
             preloaded_images.append(img)
         except Exception as e:
             logging.error(f"Error loading npy frame '{npy_file}': {e}")
-    logging.info(f"Preloaded {len(preloaded_images)} frames from '{processed_folder}'")
+    num_frames = len(preloaded_images)
+    logging.info(f"Preloaded {num_frames} frames from '{processed_folder}'")
+    
+    # Calculate intended video duration.
+    video_duration = num_frames / fps
+
+    # Prepare audio playback.
+    audio_path = os.path.join(processed_folder, "audio.mp3")
+    audio_proc = None
+    if os.path.exists(audio_path):
+        # Use ffprobe to determine the audio duration.
+        try:
+            result = subprocess.check_output([
+                "ffprobe", "-v", "error", "-show_entries",
+                "format=duration", "-of", "default=noprint_wrappers=1:nokey=1",
+                audio_path
+            ])
+            audio_duration = float(result.strip())
+        except Exception as e:
+            logging.error("Failed to get audio duration: " + str(e))
+            audio_duration = video_duration  # fallback
+
+        # Compute the factor needed so that adjusted audio duration matches video duration.
+        # atempo works such that: output_duration = input_duration / factor.
+        # To have output_duration == video_duration, we want factor = input_duration / video_duration.
+        factor = audio_duration / video_duration if video_duration > 0 else 1.0
+
+        # Note: The ffmpeg atempo filter accepts values between 0.5 and 2.0 per instance.
+        # For large deviations, chaining filters might be required.
+        if abs(factor - 1.0) > 0.01:
+            audio_cmd = [
+                "ffplay", "-nodisp", "-autoexit", "-vn",
+                "-af", f"atempo={factor:.3f}",
+                audio_path
+            ]
+            logging.info(f"Audio adjusted with atempo factor {factor:.3f} "
+                         f"(audio duration {audio_duration:.3f}s vs video duration {video_duration:.3f}s)")
+        else:
+            audio_cmd = ["ffplay", "-nodisp", "-autoexit", "-vn", audio_path]
+
+        # Launch audio in a separate process.
+        # Optionally, you can use a wrapper like "nice" to lower its priority.
+        audio_proc = subprocess.Popen(audio_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        logging.info("Audio playback started from " + audio_path)
+    else:
+        logging.warning(f"Audio file '{audio_path}' not found. Skipping audio playback.")
 
     # Main playback loop with high resolution timing.
     start_time = time.perf_counter()
@@ -114,16 +147,10 @@ if __name__ == '__main__':
         logging.error(f"No subfolders found in '{PROCESSED_DIR}'.")
         sys.exit(1)
 
-    # Optionally, you could provide an original video file for audio via command line,
-    # but here we assume that each subfolder only contains frame data.
-    original_video_path = None
-    if len(sys.argv) > 1:
-        original_video_path = sys.argv[1]
-
-    # Loop over each subfolder and play the video.
+    # Loop over each subfolder and play the video with its audio.
     while True:
         for subfolder in processed_subfolders:
             logging.info(f"Now playing video from subfolder: {subfolder}")
-            play_processed_video(subfolder, original_video_path, disp, fps=10.0)
+            play_processed_video(subfolder, disp, fps=10.0)
             disp.clear()
             time.sleep(1)  # Short pause between videos
