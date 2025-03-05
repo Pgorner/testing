@@ -96,6 +96,7 @@ def play_video(video_path, disp):
         # Rotate the image if in landscape mode. Adjust ROTATION_DEGREE as needed.
         if LANDSCAPE_MODE:
             image = image.rotate(ROTATION_DEGREE, expand=True)
+            image = image.transpose(Image.FLIP_LEFT_RIGHT)
 
         # Resize the image to fit the display
         image = image.resize((screen_width, screen_height))
