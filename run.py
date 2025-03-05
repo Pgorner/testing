@@ -39,7 +39,7 @@ def play_video(video_path, disp):
     Play the given video file on the Waveshare display with synchronized audio.
     
     - Audio is played concurrently using ffplay.
-    - Video frames are read via OpenCV and displayed using the video's own FPS.
+    - Video frames are read via OpenCV and displayed at 15 FPS based on a synchronization timer.
     - If in landscape mode, frames are rotated and flipped as needed.
     """
     cap = cv2.VideoCapture(video_path)
@@ -51,8 +51,8 @@ def play_video(video_path, disp):
     fps = cap.get(cv2.CAP_PROP_FPS)
     if fps <= 0:
         fps = 15.0  # fallback
-    delay = 0
-    logging.info(f"Playing video: {video_path} at {fps} FPS (delay: {delay:.3f} sec per frame)")
+
+    logging.info(f"Playing video: {video_path} at {fps} FPS")
     
     # Determine display dimensions
     if LANDSCAPE_MODE:
@@ -70,29 +70,36 @@ def play_video(video_path, disp):
         stderr=subprocess.DEVNULL
     )
 
+    # Use a synchronization loop so that frames display at the proper time.
+    start_time = time.time()
+    frame_number = 0
+
     while True:
         ret, frame = cap.read()
         if not ret:
             break  # End of video
 
-        # Convert frame from BGR (OpenCV) to RGB (PIL)
+        # Calculate the ideal time at which this frame should be shown.
+        expected_time = frame_number / fps
+        current_time = time.time() - start_time
+        if expected_time > current_time:
+            time.sleep(expected_time - current_time)
+
+        # Process and display the frame.
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         image = Image.fromarray(frame)
 
-        # If in landscape mode, rotate and flip the image as needed.
         if LANDSCAPE_MODE:
             image = image.rotate(ROTATION_DEGREE, expand=True)
             image = image.transpose(Image.FLIP_LEFT_RIGHT)
 
-        # Resize the image to fit the display.
         image = image.resize((screen_width, screen_height))
         disp.show_image(image)
-        
-        # Wait for the appropriate frame interval.
-        time.sleep(delay)
+        frame_number += 1
 
     cap.release()
     audio_proc.wait()  # Wait for audio playback to finish
+
 
 if __name__ == '__main__':
     # Setup logging
