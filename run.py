@@ -119,6 +119,8 @@ def play_processed_video(processed_folder, original_video_path, disp, fps=10.0):
       to PIL Images (this conversion is done only once per frame).
     - The PIL Images are then iterated over at the given FPS.
     - Timing is managed with a high-resolution timer.
+    
+    This version uses a sleep-then-busy-wait approach for minimal delay.
     """
     # Get sorted list of .npy frame files.
     frame_files = sorted([
@@ -153,7 +155,6 @@ def play_processed_video(processed_folder, original_video_path, disp, fps=10.0):
     for npy_file in frame_files:
         try:
             arr = np.load(npy_file)
-            # Convert the NumPy array to a PIL Image.
             img = Image.fromarray(arr)
             preloaded_images.append(img)
         except Exception as e:
@@ -165,17 +166,18 @@ def play_processed_video(processed_folder, original_video_path, disp, fps=10.0):
     logging.info("Marker: Images start")
     frame_interval = 1.0 / fps  # expected time per frame (0.1 sec for 10fps)
     for frame_number, image in enumerate(preloaded_images):
-        frame_start = time.perf_counter()
         expected_time = frame_number * frame_interval
-        current_time = frame_start - start_time
-        if expected_time > current_time:
-            time.sleep(expected_time - current_time)
+        # Calculate time to wait
+        delta = expected_time - (time.perf_counter() - start_time)
+        # Sleep for most of the remaining time (if any), then busy-wait
+        if delta > 0.005:
+            time.sleep(delta - 0.005)
+        while time.perf_counter() - start_time < expected_time:
+            pass
+
         # Display the preconverted PIL image.
         disp.show_image(image)
-        frame_end = time.perf_counter()
-        display_time = frame_end - frame_start
-        logging.debug(f"Frame {frame_number:04d} display time: {display_time:.3f} sec")
-        print(f"Frame {frame_number:04d} displayed at {frame_end - start_time:.3f} sec")
+        print(f"Frame {frame_number:04d} displayed at {time.perf_counter() - start_time:.3f} sec")
 
     logging.info("Marker: Images stopped")
     audio_proc.wait()
