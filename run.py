@@ -113,12 +113,13 @@ def preprocess_video(video_path):
 
 def play_processed_video(processed_folder, original_video_path, disp, fps=15.0):
     """
-    Plays a preprocessed video (frames stored as display-ready .npy RGB arrays)
+    Plays a preprocessed video (frames stored as display‑ready .npy RGB arrays)
     with synchronized audio.
     
     - Audio is played concurrently using ffplay (from the original video file).
-    - Frames are loaded from the .npy files and displayed at the given FPS.
-    - Since frames are already preprocessed, minimal work is done per frame.
+    - .npy frames are loaded once, converted to PIL images once, and then iterated
+      over at the given FPS.
+    - Since frames are preprocessed and pre‑converted, minimal work is done per frame.
     - A print statement shows each frame's number and the elapsed time.
     """
     # Get sorted list of .npy frame files.
@@ -149,35 +150,36 @@ def play_processed_video(processed_folder, original_video_path, disp, fps=15.0):
     )
     logging.info("Marker: Sound started")
 
-    # Preload the processed frames into memory.
-    preloaded_frames = []
+    # Preload and convert all frames into display‑ready PIL images.
+    preloaded_images = []
     for npy_file in frame_files:
         try:
             arr = np.load(npy_file)
-            preloaded_frames.append(arr)
+            # Since we already applied rotation/flip/resizing during preprocessing,
+            # converting to a PIL image is all that's needed.
+            img = Image.fromarray(arr)
+            preloaded_images.append(img)
         except Exception as e:
             logging.error(f"Error loading npy frame '{npy_file}': {e}")
-    logging.info(f"Preloaded {len(preloaded_frames)} frames from '{processed_folder}'")
+    logging.info(f"Preloaded {len(preloaded_images)} frames from '{processed_folder}'")
 
-    start_time = time.time()
+    # Use a high-resolution timer.
+    start_time = time.perf_counter()
     logging.info("Marker: Images start")
-    for frame_number, arr in enumerate(preloaded_frames):
+    for frame_number, image in enumerate(preloaded_images):
+        # Compute the expected display time.
         expected_time = frame_number / fps
-        current_time = time.time() - start_time
+        current_time = time.perf_counter() - start_time
         if expected_time > current_time:
             time.sleep(expected_time - current_time)
 
-        # Now, the array is already display-ready.
-        # You can either convert it to a PIL image if disp.show_image needs that,
-        # or pass the raw array directly if supported.
-        image = Image.fromarray(arr)
+        # Show the preconverted image. No further conversion needed.
         disp.show_image(image)
 
-        print(f"Frame {frame_number:04d} displayed at {time.time() - start_time:.3f} sec")
+        print(f"Frame {frame_number:04d} displayed at {time.perf_counter() - start_time:.3f} sec")
 
-    logging.info("Marker: Images stopped")
     audio_proc.wait()
-    logging.info("Marker: Sound stopped")
+
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
