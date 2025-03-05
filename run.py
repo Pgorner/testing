@@ -57,16 +57,16 @@ def download_video(url, output_path):
 
 def reencode_video_to_20fps(input_file, output_file):
     """
-    Use FFmpeg to re-encode the video to 20 FPS while keeping audio unchanged.
-    This forces the video to drop extra frames (if needed) so that playback remains
-    in sync with the audio.
+    Use FFmpeg to re-encode the video to 20 FPS while keeping the original duration.
+    The command uses the -r option as an output parameter to force the frame rate,
+    which will drop extra frames if needed but preserve the overall playback speed and audio sync.
     """
     cmd = [
         "ffmpeg",
-        "-y",                    # overwrite output file if exists
+        "-y",                    # Overwrite output file if it exists
         "-i", input_file,
-        "-filter:v", "fps=fps=20",
-        "-c:a", "copy",         # copy audio without re-encoding
+        "-r", "20",              # Set output frame rate to 20 FPS
+        "-c:a", "copy",          # Copy the audio stream without re-encoding
         output_file
     ]
     logging.info("Re-encoding video to 20 FPS with command: " + " ".join(cmd))
@@ -117,7 +117,7 @@ def play_video(video_path, disp):
         # Resize the image to fit the display
         image = image.resize((screen_width, screen_height))
         disp.show_image(image)
-        # No delay here, as the video is now fixed at 20 FPS
+        # No delay is needed as the video file is encoded at 20 FPS
 
     cap.release()
 
