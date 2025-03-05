@@ -24,7 +24,7 @@ def play_video(video_folder):
 
     # Check if at least one frame exists.
     frame_files = [f for f in os.listdir(video_folder)
-                   if f.startswith("frames") and f.endswith(".png")]
+                   if f.startswith("frame") and f.endswith(".png")]
     if not frame_files:
         logging.error(f"No frame images found in {video_folder}")
         return
