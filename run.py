@@ -136,15 +136,3 @@ if __name__ == '__main__':
             disp.clear()
             time.sleep(1)
 
-    # (Optional) Touch functionality; adjust as needed.
-    while True:
-        touch.read_touch_data()
-        point, coordinates = touch.get_touch_xy()
-        if point != 0 and coordinates:
-            disp.dre_rectangle(
-                coordinates[0]['x'], coordinates[0]['y'],
-                coordinates[0]['x'] + 5, coordinates[0]['y'] + 5,
-                0x00ff
-            )
-            print(f"Touch coordinates: x={coordinates[0]['x']}, y={coordinates[0]['y']}")
-        time.sleep(0.02)
