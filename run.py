@@ -6,6 +6,7 @@ import time
 import logging
 import subprocess
 import cv2
+import numpy as np
 from PIL import Image
 import st7789
 import cst816d
@@ -37,78 +38,96 @@ def get_video_list(directory):
 
 def preprocess_video(video_path):
     """
-    For a given video, preprocess it by extracting scaled frames
-    into a folder processed/<video_basename_without_ext>.
-    If the folder already exists, processing is skipped.
+    For a given video, preprocess it by extracting scaled frames,
+    converting them to raw RGB NumPy arrays, and saving them as .npy files
+    in a folder: processed/<video_basename_without_ext>.
+    
+    If the .npy files already exist, processing is skipped.
     """
     base = os.path.splitext(os.path.basename(video_path))[0]
     processed_folder = os.path.join(PROCESSED_DIR, base)
-    if os.path.exists(processed_folder):
-        logging.info(f"Processed frames for '{video_path}' already exist in '{processed_folder}'. Skipping preprocessing.")
+    # We check for at least one .npy file as a marker that processing is done.
+    npy_marker = os.path.join(processed_folder, "frame_0001.npy")
+    if os.path.exists(npy_marker):
+        logging.info(f"Processed RGB frames for '{video_path}' already exist in '{processed_folder}'. Skipping preprocessing.")
         return processed_folder
 
     # Create the processed folder
     os.makedirs(processed_folder, exist_ok=True)
     logging.info(f"Preprocessing video '{video_path}' to folder '{processed_folder}'...")
-    
-    # Build FFmpeg command to extract frames:
-    # Scale to the display size. For landscape mode we want 240x320 (swapped)
+
+    # Determine target dimensions.
     target_width = DISPLAY_HEIGHT if LANDSCAPE_MODE else DISPLAY_WIDTH
     target_height = DISPLAY_WIDTH if LANDSCAPE_MODE else DISPLAY_HEIGHT
 
-    # This command extracts each frame as a BMP image.
-    cmd = [
+    # First, extract frames as BMP images using FFmpeg.
+    temp_folder = os.path.join(processed_folder, "temp_frames")
+    os.makedirs(temp_folder, exist_ok=True)
+    ffmpeg_cmd = [
         "ffmpeg",
         "-i", video_path,
         "-vf", f"scale={target_width}:{target_height}",
-        os.path.join(processed_folder, "frame_%04d.bmp")
+        os.path.join(temp_folder, "frame_%04d.bmp")
     ]
-    logging.info("Running FFmpeg command: " + " ".join(cmd))
+    logging.info("Running FFmpeg command: " + " ".join(ffmpeg_cmd))
     try:
-        subprocess.run(cmd, check=True)
+        subprocess.run(ffmpeg_cmd, check=True)
     except subprocess.CalledProcessError as e:
         logging.error("FFmpeg preprocessing failed: " + str(e))
         sys.exit(1)
+
+    # Now, convert each BMP to an RGB NumPy array and save as .npy.
+    bmp_files = sorted([
+        os.path.join(temp_folder, f)
+        for f in os.listdir(temp_folder)
+        if f.lower().endswith(".bmp")
+    ])
+    for frame_path in bmp_files:
+        try:
+            img = Image.open(frame_path).convert("RGB")
+            # Convert to NumPy array.
+            arr = np.array(img)
+            # Save as .npy file.
+            base_frame = os.path.splitext(os.path.basename(frame_path))[0]
+            npy_path = os.path.join(processed_folder, f"{base_frame}.npy")
+            np.save(npy_path, arr)
+        except Exception as e:
+            logging.error(f"Error processing frame '{frame_path}': {e}")
+
+    # Optionally, remove the temporary BMP files.
+    for f in bmp_files:
+        os.remove(f)
+    os.rmdir(temp_folder)
+
+    logging.info(f"Preprocessing complete for '{video_path}'.")
     return processed_folder
 
 def play_processed_video(processed_folder, original_video_path, disp, fps=15.0):
     """
-    Plays a preprocessed video (as a folder of frames) with synchronized audio.
+    Plays a preprocessed video (frames stored as .npy RGB arrays) with synchronized audio.
     
     - Audio is played concurrently using ffplay (from the original video file).
-    - All frames are preloaded into memory so that playback overhead is minimized.
-    - Frames are then displayed at the given FPS.
+    - Frames are loaded from the .npy files in the processed folder and displayed at the given FPS.
     - If in landscape mode, the frame is rotated and flipped as needed.
     - A print statement shows each frame's number and the elapsed time.
     """
-    # Get sorted list of frame file names.
+    # Get sorted list of .npy frame file names.
     frame_files = sorted([
         os.path.join(processed_folder, f)
         for f in os.listdir(processed_folder)
-        if f.lower().endswith(".bmp")
+        if f.lower().endswith(".npy")
     ])
     if not frame_files:
-        logging.error(f"No frames found in processed folder '{processed_folder}'.")
+        logging.error(f"No processed frames found in folder '{processed_folder}'.")
         return
 
     logging.info(f"Playing processed video from '{processed_folder}' at {fps} FPS")
-    
-    # Preload all frames into memory.
-    preloaded_frames = []
-    for frame_path in frame_files:
-        try:
-            # Open the image and convert it to RGB.
-            img = Image.open(frame_path).convert("RGB")
-            preloaded_frames.append(img)
-        except Exception as e:
-            logging.error(f"Error loading frame '{frame_path}': {e}")
-    logging.info(f"Preloaded {len(preloaded_frames)} frames from '{processed_folder}'")
-    
-    # Determine display dimensions (frames are already scaled)
+
+    # Determine display dimensions.
     screen_width = DISPLAY_HEIGHT if LANDSCAPE_MODE else DISPLAY_WIDTH
     screen_height = DISPLAY_WIDTH if LANDSCAPE_MODE else DISPLAY_HEIGHT
 
-    # Start audio playback using ffplay (audio only)
+    # Start audio playback using ffplay (audio only).
     audio_proc = subprocess.Popen(
         ["ffplay", "-nodisp", "-autoexit", "-vn", original_video_path],
         stdout=subprocess.DEVNULL,
@@ -116,14 +135,26 @@ def play_processed_video(processed_folder, original_video_path, disp, fps=15.0):
     )
     logging.info("Marker: Sound started")
 
-    # Use a synchronization loop based on the preloaded frames.
+    # Preload the frames into memory.
+    preloaded_frames = []
+    for npy_file in frame_files:
+        try:
+            arr = np.load(npy_file)
+            preloaded_frames.append(arr)
+        except Exception as e:
+            logging.error(f"Error loading npy frame '{npy_file}': {e}")
+    logging.info(f"Preloaded {len(preloaded_frames)} frames from '{processed_folder}'")
+
     start_time = time.time()
     logging.info("Marker: Images start")
-    for frame_number, image in enumerate(preloaded_frames):
+    for frame_number, arr in enumerate(preloaded_frames):
         expected_time = frame_number / fps
         current_time = time.time() - start_time
         if expected_time > current_time:
             time.sleep(expected_time - current_time)
+
+        # Convert the NumPy array back to a PIL image.
+        image = Image.fromarray(arr)
 
         # Apply rotation/flip if needed.
         if LANDSCAPE_MODE:
@@ -131,37 +162,35 @@ def play_processed_video(processed_folder, original_video_path, disp, fps=15.0):
         else:
             image_disp = image
 
-        # The frames are already scaled by FFmpeg, but if needed, resize:
+        # Resize if necessary (should already be at target resolution).
         image_disp = image_disp.resize((screen_width, screen_height))
         disp.show_image(image_disp)
 
-        # Print frame number and elapsed time.
         print(f"Frame {frame_number:04d} displayed at {time.time() - start_time:.3f} sec")
 
     logging.info("Marker: Images stopped")
-    audio_proc.wait()  # Wait for audio to finish
+    audio_proc.wait()
     logging.info("Marker: Sound stopped")
 
 if __name__ == '__main__':
-    # Setup logging
     logging.basicConfig(level=logging.INFO)
     
-    # Ensure the processed directory exists
+    # Ensure the processed directory exists.
     os.makedirs(PROCESSED_DIR, exist_ok=True)
 
-    # Initialize Waveshare display and touch controller
+    # Initialize Waveshare display and touch controller.
     disp = st7789.st7789()
     disp.clear()
     touch = cst816d.cst816d()
 
-    # Get list of video files from VIDEO_DIR
+    # Get list of video files from VIDEO_DIR.
     video_files = get_video_list(VIDEO_DIR)
     if not video_files:
         logging.error("No video files found in folder '{}'".format(VIDEO_DIR))
         sys.exit(1)
     logging.info("Found videos: " + ", ".join(video_files))
 
-    # Preprocess each video if needed, and then play in a loop.
+    # Preprocess each video if needed.
     processed_videos = []  # List of tuples: (processed_folder, original_video_path)
     for video_file in video_files:
         processed_folder = preprocess_video(video_file)
@@ -171,11 +200,10 @@ if __name__ == '__main__':
     while True:
         for processed_folder, original_video_path in processed_videos:
             play_processed_video(processed_folder, original_video_path, disp, fps=15.0)
-            # Clear display between videos
             disp.clear()
             time.sleep(1)
 
-    # Optional: Touch input loop (if needed)
+    # Optional: Touch input loop.
     while True:
         touch.read_touch_data()
         point, coordinates = touch.get_touch_xy()
