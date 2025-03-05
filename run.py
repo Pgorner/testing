@@ -11,7 +11,7 @@ import st7789
 import cst816d
 
 # Directory containing pre-converted videos
-VIDEO_DIR = "vids"
+VIDEO_DIR = "15fpsd"
 
 # Set this flag True if you want the display in landscape mode.
 LANDSCAPE_MODE = True
