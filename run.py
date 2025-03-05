@@ -60,21 +60,24 @@ def download_video(url, output_path):
             logging.error(f"Error downloading {url}: {e}")
     return output_path
 
-
 def play_video(video_path, disp):
     """
     Play the given video file on the Waveshare display.
     Uses OpenCV to decode frames, converts them to PIL images, rotates if needed,
     resizes, and then displays them using disp.show_image.
+    
+    To cope with the display's 20 FPS limit, if the video is encoded at a higher
+    framerate, we skip frames so that only an effective 20 frames per second are shown.
     """
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         logging.error(f"Failed to open video file: {video_path}")
         return
 
-    # Optionally, check the FPS (should be 20 now)
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    logging.info(f"Playing video at {fps} FPS")
+    # Check the video's original FPS (expected to be close to 20 if re-encoded, 
+    # but if it's higher, we'll drop some frames)
+    orig_fps = cap.get(cv2.CAP_PROP_FPS)
+    logging.info(f"Playing video at {orig_fps} FPS")
     
     # For landscape mode, swap dimensions (effective resolution: 320x240)
     if LANDSCAPE_MODE:
@@ -84,10 +87,22 @@ def play_video(video_path, disp):
         screen_width = DISPLAY_WIDTH
         screen_height = DISPLAY_HEIGHT
 
+    # Calculate frame interval ratio:
+    # If the video has a higher frame rate than 20, we only display every (orig_fps/20)th frame.
+    frame_interval = orig_fps / 20.0 if orig_fps > 20 else 1.0
+    frame_counter = 0.0
+
     while True:
         ret, frame = cap.read()
         if not ret:
             break  # End of video
+
+        # Increase the frame counter; only display a frame when we cross the interval.
+        frame_counter += 1.0
+        if frame_counter < frame_interval:
+            continue
+        # Reset counter by subtracting the interval (in case of non-integer ratio)
+        frame_counter -= frame_interval
 
         # Convert frame from BGR (OpenCV) to RGB (PIL)
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -96,15 +111,14 @@ def play_video(video_path, disp):
         # Rotate the image if in landscape mode. Adjust ROTATION_DEGREE as needed.
         if LANDSCAPE_MODE:
             image = image.rotate(ROTATION_DEGREE, expand=True)
+            # Correct mirror effect if needed
             image = image.transpose(Image.FLIP_LEFT_RIGHT)
 
         # Resize the image to fit the display
         image = image.resize((screen_width, screen_height))
         disp.show_image(image)
-        # Removed explicit time.sleep: the video file now runs at 20 FPS naturally
 
     cap.release()
-
 
 
 if __name__ == '__main__':
