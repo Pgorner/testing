@@ -78,7 +78,7 @@ def play_processed_video(processed_folder, original_video_path, disp, fps=15.0):
     - Audio is played concurrently using ffplay (from the original video file).
     - Frames are loaded from the processed folder and displayed at the given FPS.
     - If in landscape mode, the frame is rotated and flipped as needed.
-    - Logging markers indicate when images start, when they stop, and when the sound stops.
+    - Prints each frame's number and the elapsed time so you can see how many frames per second.
     """
     # Get sorted list of frame file names.
     frame_files = sorted([
@@ -128,6 +128,9 @@ def play_processed_video(processed_folder, original_video_path, disp, fps=15.0):
         # Even though frames are already scaled, resize if necessary.
         image = image.resize((screen_width, screen_height))
         disp.show_image(image)
+
+        # Print frame number and elapsed time.
+        print(f"Frame {frame_number:04d} displayed at {time.time() - start_time:.3f} sec")
 
     logging.info("Marker: Images stopped")
     audio_proc.wait()  # Wait for audio to finish
