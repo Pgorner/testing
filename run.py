@@ -10,8 +10,9 @@ from PIL import Image
 import st7789
 import cst816d
 
-# Directory containing pre-scaled videos (15 FPS)
-VIDEO_DIR = "15fpsd"
+# Directories
+VIDEO_DIR = "15fpsd"     # Folder where the original 15 FPS videos are stored.
+PROCESSED_DIR = "processed"  # Base folder to hold processed frames.
 
 # Set this flag True if you want the display in landscape mode.
 LANDSCAPE_MODE = True
@@ -34,98 +35,131 @@ def get_video_list(directory):
             videos.append(os.path.join(directory, filename))
     return videos
 
-def play_video(video_path, disp):
+def preprocess_video(video_path):
     """
-    Play the given video file on the Waveshare display with synchronized audio.
+    For a given video, preprocess it by extracting scaled frames
+    into a folder processed/<video_basename_without_ext>.
+    If the folder already exists, processing is skipped.
+    """
+    base = os.path.splitext(os.path.basename(video_path))[0]
+    processed_folder = os.path.join(PROCESSED_DIR, base)
+    if os.path.exists(processed_folder):
+        logging.info(f"Processed frames for '{video_path}' already exist in '{processed_folder}'. Skipping preprocessing.")
+        return processed_folder
+
+    # Create the processed folder
+    os.makedirs(processed_folder, exist_ok=True)
+    logging.info(f"Preprocessing video '{video_path}' to folder '{processed_folder}'...")
     
-    - Audio is played concurrently using ffplay.
-    - Video frames are read via OpenCV and displayed at 15 FPS based on a synchronization timer.
-    - If in landscape mode, frames are rotated and flipped as needed.
+    # Build FFmpeg command to extract frames:
+    # Scale to the display size. For landscape mode we want 240x320 (swapped)
+    target_width = DISPLAY_HEIGHT if LANDSCAPE_MODE else DISPLAY_WIDTH
+    target_height = DISPLAY_WIDTH if LANDSCAPE_MODE else DISPLAY_HEIGHT
+
+    # This command extracts each frame as a BMP image.
+    cmd = [
+        "ffmpeg",
+        "-i", video_path,
+        "-vf", f"scale={target_width}:{target_height}",
+        os.path.join(processed_folder, "frame_%04d.bmp")
+    ]
+    logging.info("Running FFmpeg command: " + " ".join(cmd))
+    try:
+        subprocess.run(cmd, check=True)
+    except subprocess.CalledProcessError as e:
+        logging.error("FFmpeg preprocessing failed: " + str(e))
+        sys.exit(1)
+    return processed_folder
+
+def play_processed_video(processed_folder, original_video_path, disp, fps=15.0):
     """
-    cap = cv2.VideoCapture(video_path)
-    if not cap.isOpened():
-        logging.error(f"Failed to open video file: {video_path}")
+    Plays a preprocessed video (as a folder of frames) with synchronized audio.
+    
+    - Audio is played concurrently using ffplay (from the original video file).
+    - Frames are loaded from the processed folder and displayed at the given FPS.
+    - If in landscape mode, the frame is rotated and flipped as needed.
+    """
+    # Get sorted list of frame file names.
+    frame_files = sorted([
+        os.path.join(processed_folder, f)
+        for f in os.listdir(processed_folder)
+        if f.lower().endswith(".bmp")
+    ])
+    if not frame_files:
+        logging.error(f"No frames found in processed folder '{processed_folder}'.")
         return
 
-    # Retrieve the video's FPS (should be 15 FPS as pre-scaled)
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    if fps <= 0:
-        fps = 15.0  # fallback
-
-    logging.info(f"Playing video: {video_path} at {fps} FPS")
+    logging.info(f"Playing processed video from '{processed_folder}' at {fps} FPS")
     
-    # Determine display dimensions
-    if LANDSCAPE_MODE:
-        screen_width = DISPLAY_HEIGHT  # 240
-        screen_height = DISPLAY_WIDTH  # 320
-    else:
-        screen_width = DISPLAY_WIDTH
-        screen_height = DISPLAY_HEIGHT
+    # Determine display dimensions (frames are already scaled to target)
+    screen_width = DISPLAY_HEIGHT if LANDSCAPE_MODE else DISPLAY_WIDTH
+    screen_height = DISPLAY_WIDTH if LANDSCAPE_MODE else DISPLAY_HEIGHT
 
     # Start audio playback using ffplay (audio only)
-    # '-nodisp' disables video display and '-vn' disables video decoding.
     audio_proc = subprocess.Popen(
-        ["ffplay", "-nodisp", "-autoexit", "-vn", video_path],
+        ["ffplay", "-nodisp", "-autoexit", "-vn", original_video_path],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL
     )
 
-    # Use a synchronization loop so that frames display at the proper time.
+    # Synchronize display based on FPS.
     start_time = time.time()
-    frame_number = 0
-
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break  # End of video
-
-        # Calculate the ideal time at which this frame should be shown.
+    for frame_number, frame_path in enumerate(frame_files):
+        # Calculate the expected display time.
         expected_time = frame_number / fps
         current_time = time.time() - start_time
         if expected_time > current_time:
             time.sleep(expected_time - current_time)
 
-        # Process and display the frame.
-        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        image = Image.fromarray(frame)
+        try:
+            image = Image.open(frame_path)
+        except Exception as e:
+            logging.error(f"Error opening frame '{frame_path}': {e}")
+            continue
 
+        # Apply rotation/flip if needed.
         if LANDSCAPE_MODE:
             image = image.rotate(ROTATION_DEGREE, expand=True)
             image = image.transpose(Image.FLIP_LEFT_RIGHT)
 
+        # In this case, frames are already scaled, but you can resize if needed:
         image = image.resize((screen_width, screen_height))
         disp.show_image(image)
-        frame_number += 1
 
-    cap.release()
-    audio_proc.wait()  # Wait for audio playback to finish
-
+    audio_proc.wait()  # Wait for audio to finish
 
 if __name__ == '__main__':
     # Setup logging
     logging.basicConfig(level=logging.INFO)
     
+    # Ensure the processed directory exists
+    os.makedirs(PROCESSED_DIR, exist_ok=True)
+
     # Initialize Waveshare display and touch controller
     disp = st7789.st7789()
     disp.clear()
     touch = cst816d.cst816d()
 
-    # Get the list of video files from the "vids" folder
+    # Get list of video files from VIDEO_DIR
     video_files = get_video_list(VIDEO_DIR)
     if not video_files:
-        logging.error("No video files found in folder 'vids'")
+        logging.error("No video files found in folder '{}'".format(VIDEO_DIR))
         sys.exit(1)
-
     logging.info("Found videos: " + ", ".join(video_files))
 
-    # Main loop: play each video in sequence and then loop back.
-    while True:
-        for video_file in video_files:
-            play_video(video_file, disp)
+    # Preprocess each video if needed, and then play in a loop.
+    processed_videos = []  # List of tuples: (processed_folder, original_video_path)
+    for video_file in video_files:
+        processed_folder = preprocess_video(video_file)
+        processed_videos.append((processed_folder, video_file))
 
-        # Clear the display between loops
-        disp.clear()
-        time.sleep(1)
+    # Main playback loop: cycle through videos.
+    while True:
+        for processed_folder, original_video_path in processed_videos:
+            play_processed_video(processed_folder, original_video_path, disp, fps=15.0)
+            # Clear display between videos
+            disp.clear()
+            time.sleep(1)
 
     # Optional: Touch input loop (if needed)
     while True:
