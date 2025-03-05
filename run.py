@@ -62,16 +62,16 @@ def play_processed_video(processed_folder, disp, fps=10.0):
 
     # Look for the audio file in the folder.
     audio_path = os.path.join(processed_folder, "audio.mp3")
-    if os.path.exists(audio_path):
-        audio_proc = subprocess.Popen(
-            ["ffplay", "-nodisp", "-autoexit", "-vn", audio_path],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
-        )
-        logging.info("Audio playback started from " + audio_path)
-    else:
-        audio_proc = None
-        logging.warning(f"Audio file '{audio_path}' not found. Skipping audio playback.")
+    #if os.path.exists(audio_path):
+        #audio_proc = subprocess.Popen(
+            #["ffplay", "-nodisp", "-autoexit", "-vn", audio_path],
+            #stdout=subprocess.DEVNULL,
+            #stderr=subprocess.DEVNULL
+        #)
+        #logging.info("Audio playback started from " + audio_path)
+    #else:
+        #audio_proc = None
+        #logging.warning(f"Audio file '{audio_path}' not found. Skipping audio playback.")
 
     # Preload all frames and convert them to PIL Images.
     preloaded_images = []
