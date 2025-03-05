@@ -1,138 +1,71 @@
-#!/usr/bin/python
-# -*- coding: UTF-8 -*-
+#!/usr/bin/env python3
 import os
-import sys
-import time
-import logging
 import subprocess
-from PIL import Image
-import st7789
-import cst816d
+import logging
 
-# Directory where the processed videos (subfolders) are stored.
-PROCESSED_DIR = "processed"
+# --- Configuration ---
+FPS = 10  # Playback framerate
+# Directory that holds folders for each processed video.
+PROCESSED_DIR = os.path.join(os.getcwd(), "processed")
 
-# Set this flag True if you want the display in landscape mode.
-LANDSCAPE_MODE = True
+logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
-# Native display dimensions (portrait)
-DISPLAY_WIDTH = 240
-DISPLAY_HEIGHT = 320
-
-# In landscape mode, the effective resolution is swapped (320x240) and may require a rotation.
-ROTATION_DEGREE = 0
-
-def get_processed_videos(directory):
+def play_video(video_folder):
     """
-    Returns a sorted list of full paths to subdirectories in 'directory'.
-    Each subdirectory represents one processed video.
+    Plays the video composed of an audio file (audio.aac) and image sequence
+    (frames%04d.png) from the given folder.
     """
-    videos = []
-    for name in sorted(os.listdir(directory)):
-        full_path = os.path.join(directory, name)
-        if os.path.isdir(full_path):
-            videos.append(full_path)
-    return videos
+    audio_path = os.path.join(video_folder, "audio.aac")
+    frames_pattern = os.path.join(video_folder, "frames%04d.png")
 
-def play_processed_video(processed_folder, disp, fps=10.0):
-    """
-    Plays a processed video from 'processed_folder' using PNG frames and an AAC audio file.
-    
-    The folder is expected to contain:
-      - PNG frames named like "frame_0001.png", "frame_0002.png", etc.
-      - An audio file named "audio.aac".
-    
-    Frames are displayed at the specified fps while audio plays concurrently.
-    """
-    # Get sorted list of PNG frames.
-    frame_files = sorted([
-        os.path.join(processed_folder, f)
-        for f in os.listdir(processed_folder)
-        if f.lower().endswith(".png") and f.startswith("frame_")
-    ])
+    if not os.path.exists(audio_path):
+        logging.error(f"Audio file not found in {video_folder}")
+        return
+
+    # Check if at least one frame exists.
+    frame_files = [f for f in os.listdir(video_folder)
+                   if f.startswith("frames") and f.endswith(".png")]
     if not frame_files:
-        logging.error(f"No processed PNG frames found in folder '{processed_folder}'.")
+        logging.error(f"No frame images found in {video_folder}")
         return
 
-    logging.info(f"Playing processed video from '{processed_folder}' at {fps} FPS")
-    
-    num_frames = len(frame_files)
-    converted_duration = num_frames / fps
-    print(f"Extracted {num_frames} frames. At {fps:.2f} fps, video duration is ~{converted_duration:.2f} sec (expected 10.00 fps).")
-    
-    # Determine display dimensions.
-    if LANDSCAPE_MODE:
-        screen_width = DISPLAY_HEIGHT
-        screen_height = DISPLAY_WIDTH
-    else:
-        screen_width = DISPLAY_WIDTH
-        screen_height = DISPLAY_HEIGHT
+    logging.info(f"Playing video from folder: {os.path.basename(video_folder)}")
 
-    # Get the audio file (expected to be "audio.aac" in the folder).
-    audio_file = os.path.join(processed_folder, "audio.aac")
-    if not os.path.exists(audio_file):
-        logging.error(f"Audio file 'audio.aac' not found in folder '{processed_folder}'.")
+    # Build the ffmpeg command that reads the image sequence at FPS and audio,
+    # encodes to a temporary matroska stream, and pipes it to ffplay.
+    ffmpeg_cmd = [
+        "ffmpeg",
+        "-framerate", str(FPS),
+        "-i", frames_pattern,
+        "-i", audio_path,
+        "-c:v", "libx264",
+        "-pix_fmt", "yuv420p",
+        "-c:a", "copy",
+        "-f", "matroska",
+        "-"  # Output to stdout
+    ]
+    ffplay_cmd = ["ffplay", "-autoexit", "-"]  # Autoexit when done
+
+    try:
+        # Open ffmpeg process, piping its stdout to ffplay.
+        ffmpeg_proc = subprocess.Popen(ffmpeg_cmd, stdout=subprocess.PIPE)
+        ffplay_proc = subprocess.Popen(ffplay_cmd, stdin=ffmpeg_proc.stdout)
+        # Close ffmpeg's stdout in the parent process.
+        ffmpeg_proc.stdout.close()
+        ffplay_proc.wait()
+    except Exception as e:
+        logging.error(f"Error playing video from {video_folder}: {e}")
+
+def main():
+    if not os.path.exists(PROCESSED_DIR):
+        logging.error("The 'processed' directory was not found.")
         return
 
-    # Start audio playback using ffplay (audio only).
-    audio_proc = subprocess.Popen(
-        ["ffplay", "-nodisp", "-autoexit", "-vn", audio_file],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL
-    )
-    logging.info("Marker: Sound started")
-
-    # Preload all PNG frames into PIL Images.
-    preloaded_images = []
-    for frame_path in frame_files:
-        try:
-            img = Image.open(frame_path).convert("RGB")
-            if LANDSCAPE_MODE:
-                img = img.rotate(ROTATION_DEGREE, expand=True).transpose(Image.FLIP_LEFT_RIGHT)
-            preloaded_images.append(img)
-        except Exception as e:
-            logging.error(f"Error loading PNG frame '{frame_path}': {e}")
-    logging.info(f"Preloaded {len(preloaded_images)} frames from '{processed_folder}'")
-    
-    # Display frames at the target fps using a high-resolution timer.
-    start_time = time.perf_counter()
-    logging.info("Marker: Images start")
-    frame_interval = 1.0 / fps  # 0.1 sec per frame for 10 fps
-    for frame_number, image in enumerate(preloaded_images):
-        expected_time = frame_number * frame_interval
-        # Sleep most of the remaining time, then busy-wait for precision.
-        delta = expected_time - (time.perf_counter() - start_time)
-        if delta > 0.005:
-            time.sleep(delta - 0.005)
-        while time.perf_counter() - start_time < expected_time:
-            pass
-        
-        disp.show_image(image)
-        print(f"Frame {frame_number:04d} displayed at {time.perf_counter() - start_time:.3f} sec")
-    
-    logging.info("Marker: Images stopped")
-    audio_proc.wait()
-    logging.info("Marker: Sound stopped")
+    # Loop through all subfolders in the processed directory.
+    for folder in sorted(os.listdir(PROCESSED_DIR)):
+        video_folder = os.path.join(PROCESSED_DIR, folder)
+        if os.path.isdir(video_folder):
+            play_video(video_folder)
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO)
-    
-    # Initialize display and touch (if needed).
-    disp = st7789.st7789()
-    disp.clear()
-    touch = cst816d.cst816d()
-
-    # Get all processed video folders.
-    processed_videos = get_processed_videos(PROCESSED_DIR)
-    if not processed_videos:
-        logging.error(f"No processed video folders found in '{PROCESSED_DIR}'.")
-        sys.exit(1)
-    logging.info("Found processed videos: " + ", ".join(processed_videos))
-    
-    # Main loop: cycle through each processed video.
-    while True:
-        for video_folder in processed_videos:
-            play_processed_video(video_folder, disp, fps=10.0)
-            disp.clear()
-            time.sleep(1)
-
+    main()
