@@ -51,7 +51,7 @@ def play_video(video_path, disp):
     fps = cap.get(cv2.CAP_PROP_FPS)
     if fps <= 0:
         fps = 15.0  # fallback
-    delay = 1.0 / fps
+    delay = 0
     logging.info(f"Playing video: {video_path} at {fps} FPS (delay: {delay:.3f} sec per frame)")
     
     # Determine display dimensions
