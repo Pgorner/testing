@@ -10,7 +10,7 @@ from PIL import Image
 import st7789
 import cst816d
 
-# Directory containing pre-converted videos
+# Directory containing pre-scaled videos (15 FPS)
 VIDEO_DIR = "15fpsd"
 
 # Set this flag True if you want the display in landscape mode.
@@ -37,19 +37,22 @@ def get_video_list(directory):
 def play_video(video_path, disp):
     """
     Play the given video file on the Waveshare display with synchronized audio.
-    This function:
-      - Launches FFplay in a subprocess to play the audio (with no video display).
-      - Reads video frames with OpenCV and synchronizes frame display to 20 FPS.
-      - Adjusts (rotates and flips) the frame for landscape mode.
+    
+    - Audio is played concurrently using ffplay.
+    - Video frames are read via OpenCV and displayed using the video's own FPS.
+    - If in landscape mode, frames are rotated and flipped as needed.
     """
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         logging.error(f"Failed to open video file: {video_path}")
         return
 
-    # We are forcing playback at 20 FPS.
-    fps = 20.0
-    logging.info(f"Playing video: {video_path} at {fps} FPS")
+    # Retrieve the video's FPS (should be 15 FPS as pre-scaled)
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    if fps <= 0:
+        fps = 15.0  # fallback
+    delay = 1.0 / fps
+    logging.info(f"Playing video: {video_path} at {fps} FPS (delay: {delay:.3f} sec per frame)")
     
     # Determine display dimensions
     if LANDSCAPE_MODE:
@@ -60,26 +63,17 @@ def play_video(video_path, disp):
         screen_height = DISPLAY_HEIGHT
 
     # Start audio playback using ffplay (audio only)
-    # '-nodisp' disables video display, '-vn' disables video decoding.
+    # '-nodisp' disables video display and '-vn' disables video decoding.
     audio_proc = subprocess.Popen(
         ["ffplay", "-nodisp", "-autoexit", "-vn", video_path],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL
     )
 
-    # Use a timing loop to display frames at exactly 20 FPS.
-    start_time = time.time()
-    frame_number = 0
     while True:
         ret, frame = cap.read()
         if not ret:
             break  # End of video
-
-        # Calculate when this frame should be displayed
-        expected_time = frame_number * (1.0 / fps)
-        current_time = time.time() - start_time
-        if expected_time > current_time:
-            time.sleep(expected_time - current_time)
 
         # Convert frame from BGR (OpenCV) to RGB (PIL)
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -93,7 +87,9 @@ def play_video(video_path, disp):
         # Resize the image to fit the display.
         image = image.resize((screen_width, screen_height))
         disp.show_image(image)
-        frame_number += 1
+        
+        # Wait for the appropriate frame interval.
+        time.sleep(delay)
 
     cap.release()
     audio_proc.wait()  # Wait for audio playback to finish
