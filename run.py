@@ -105,6 +105,7 @@ def play_video(video_path, disp):
     cap.release()
 
 
+
 if __name__ == '__main__':
     # Setup logging
     logging.basicConfig(level=logging.INFO)
