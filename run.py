@@ -38,29 +38,33 @@ def get_video_list(directory):
 
 def preprocess_video(video_path):
     """
-    For a given video, preprocess it by extracting scaled frames,
-    converting them to raw RGB NumPy arrays, and saving them as .npy files
-    in a folder: processed/<video_basename_without_ext>.
-    
-    If the .npy files already exist, processing is skipped.
+    For a given video, preprocess it by extracting frames, converting them to
+    display-ready RGB NumPy arrays (with rotation, flip, and resizing applied),
+    and saving them as .npy files in a folder:
+        processed/<video_basename_without_ext>/
+    If a marker file exists, the processing is skipped.
     """
     base = os.path.splitext(os.path.basename(video_path))[0]
     processed_folder = os.path.join(PROCESSED_DIR, base)
-    # We check for at least one .npy file as a marker that processing is done.
-    npy_marker = os.path.join(processed_folder, "frame_0001.npy")
-    if os.path.exists(npy_marker):
+    # We'll check for a marker file to indicate that processing is complete.
+    marker_file = os.path.join(processed_folder, "frame_0001.npy")
+    if os.path.exists(marker_file):
         logging.info(f"Processed RGB frames for '{video_path}' already exist in '{processed_folder}'. Skipping preprocessing.")
         return processed_folder
 
-    # Create the processed folder
     os.makedirs(processed_folder, exist_ok=True)
     logging.info(f"Preprocessing video '{video_path}' to folder '{processed_folder}'...")
 
     # Determine target dimensions.
-    target_width = DISPLAY_HEIGHT if LANDSCAPE_MODE else DISPLAY_WIDTH
-    target_height = DISPLAY_WIDTH if LANDSCAPE_MODE else DISPLAY_HEIGHT
+    if LANDSCAPE_MODE:
+        # In landscape mode, our target dimensions are swapped.
+        target_width = DISPLAY_HEIGHT  # e.g. 320
+        target_height = DISPLAY_WIDTH  # e.g. 240
+    else:
+        target_width = DISPLAY_WIDTH
+        target_height = DISPLAY_HEIGHT
 
-    # First, extract frames as BMP images using FFmpeg.
+    # Extract frames as BMP images using FFmpeg.
     temp_folder = os.path.join(processed_folder, "temp_frames")
     os.makedirs(temp_folder, exist_ok=True)
     ffmpeg_cmd = [
@@ -76,7 +80,7 @@ def preprocess_video(video_path):
         logging.error("FFmpeg preprocessing failed: " + str(e))
         sys.exit(1)
 
-    # Now, convert each BMP to an RGB NumPy array and save as .npy.
+    # Process each BMP frame to create a display-ready NumPy array.
     bmp_files = sorted([
         os.path.join(temp_folder, f)
         for f in os.listdir(temp_folder)
@@ -85,16 +89,21 @@ def preprocess_video(video_path):
     for frame_path in bmp_files:
         try:
             img = Image.open(frame_path).convert("RGB")
-            # Convert to NumPy array.
+            # Apply rotation and flip if in landscape mode.
+            if LANDSCAPE_MODE:
+                img = img.rotate(ROTATION_DEGREE, expand=True).transpose(Image.FLIP_LEFT_RIGHT)
+            # The frame should already be at target dimensions from FFmpeg,
+            # but you can call resize() just to be safe.
+            img = img.resize((target_width, target_height))
             arr = np.array(img)
-            # Save as .npy file.
+            # Save the array as .npy file.
             base_frame = os.path.splitext(os.path.basename(frame_path))[0]
             npy_path = os.path.join(processed_folder, f"{base_frame}.npy")
             np.save(npy_path, arr)
         except Exception as e:
             logging.error(f"Error processing frame '{frame_path}': {e}")
 
-    # Optionally, remove the temporary BMP files.
+    # Optionally, clean up the temporary BMP files.
     for f in bmp_files:
         os.remove(f)
     os.rmdir(temp_folder)
@@ -104,14 +113,15 @@ def preprocess_video(video_path):
 
 def play_processed_video(processed_folder, original_video_path, disp, fps=15.0):
     """
-    Plays a preprocessed video (frames stored as .npy RGB arrays) with synchronized audio.
+    Plays a preprocessed video (frames stored as display-ready .npy RGB arrays)
+    with synchronized audio.
     
     - Audio is played concurrently using ffplay (from the original video file).
-    - Frames are loaded from the .npy files in the processed folder and displayed at the given FPS.
-    - If in landscape mode, the frame is rotated and flipped as needed.
+    - Frames are loaded from the .npy files and displayed at the given FPS.
+    - Since frames are already preprocessed, minimal work is done per frame.
     - A print statement shows each frame's number and the elapsed time.
     """
-    # Get sorted list of .npy frame file names.
+    # Get sorted list of .npy frame files.
     frame_files = sorted([
         os.path.join(processed_folder, f)
         for f in os.listdir(processed_folder)
@@ -123,9 +133,13 @@ def play_processed_video(processed_folder, original_video_path, disp, fps=15.0):
 
     logging.info(f"Playing processed video from '{processed_folder}' at {fps} FPS")
 
-    # Determine display dimensions.
-    screen_width = DISPLAY_HEIGHT if LANDSCAPE_MODE else DISPLAY_WIDTH
-    screen_height = DISPLAY_WIDTH if LANDSCAPE_MODE else DISPLAY_HEIGHT
+    # Determine display dimensions (frames are already at target dimensions).
+    if LANDSCAPE_MODE:
+        screen_width = DISPLAY_HEIGHT
+        screen_height = DISPLAY_WIDTH
+    else:
+        screen_width = DISPLAY_WIDTH
+        screen_height = DISPLAY_HEIGHT
 
     # Start audio playback using ffplay (audio only).
     audio_proc = subprocess.Popen(
@@ -135,7 +149,7 @@ def play_processed_video(processed_folder, original_video_path, disp, fps=15.0):
     )
     logging.info("Marker: Sound started")
 
-    # Preload the frames into memory.
+    # Preload the processed frames into memory.
     preloaded_frames = []
     for npy_file in frame_files:
         try:
@@ -153,18 +167,11 @@ def play_processed_video(processed_folder, original_video_path, disp, fps=15.0):
         if expected_time > current_time:
             time.sleep(expected_time - current_time)
 
-        # Convert the NumPy array back to a PIL image.
+        # Now, the array is already display-ready.
+        # You can either convert it to a PIL image if disp.show_image needs that,
+        # or pass the raw array directly if supported.
         image = Image.fromarray(arr)
-
-        # Apply rotation/flip if needed.
-        if LANDSCAPE_MODE:
-            image_disp = image.rotate(ROTATION_DEGREE, expand=True).transpose(Image.FLIP_LEFT_RIGHT)
-        else:
-            image_disp = image
-
-        # Resize if necessary (should already be at target resolution).
-        image_disp = image_disp.resize((screen_width, screen_height))
-        disp.show_image(image_disp)
+        disp.show_image(image)
 
         print(f"Frame {frame_number:04d} displayed at {time.time() - start_time:.3f} sec")
 
@@ -203,7 +210,7 @@ if __name__ == '__main__':
             disp.clear()
             time.sleep(1)
 
-    # Optional: Touch input loop.
+    # Optional: Touch input loop (if needed).
     while True:
         touch.read_touch_data()
         point, coordinates = touch.get_touch_xy()
