@@ -4,6 +4,7 @@ import os
 import sys
 import time
 import logging
+import subprocess
 import cv2
 import yt_dlp
 from PIL import Image
@@ -29,7 +30,7 @@ ROTATION_DEGREE = 0
 
 def download_video(url, output_path):
     """
-    Download a YouTube video using yt_dlp and re-encode it to 20 FPS.
+    Download a YouTube video using yt_dlp.
     If the file already exists, skip downloading.
     """
     if os.path.exists(output_path):
@@ -45,39 +46,50 @@ def download_video(url, output_path):
                            'AppleWebKit/537.36 (KHTML, like Gecko) '
                            'Chrome/108.0.0.0 Safari/537.36')
         },
-        # Add a postprocessor to re-encode the video to 20 FPS
-        'postprocessors': [{
-            'key': 'FFmpegVideoConvertor',
-            'preferedformat': 'mp4'
-        }],
-        'postprocessor_args': ['-r', '20'],  # Force 20 FPS
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        logging.info(f"Downloading {url} to {output_path} with 20 FPS conversion")
+        logging.info(f"Downloading {url} to {output_path}")
         try:
             ydl.download([url])
         except Exception as e:
             logging.error(f"Error downloading {url}: {e}")
     return output_path
 
+def reencode_video_to_20fps(input_file, output_file):
+    """
+    Use FFmpeg to re-encode the video to 20 FPS while keeping audio unchanged.
+    This forces the video to drop extra frames (if needed) so that playback remains
+    in sync with the audio.
+    """
+    cmd = [
+        "ffmpeg",
+        "-y",                    # overwrite output file if exists
+        "-i", input_file,
+        "-filter:v", "fps=fps=20",
+        "-c:a", "copy",         # copy audio without re-encoding
+        output_file
+    ]
+    logging.info("Re-encoding video to 20 FPS with command: " + " ".join(cmd))
+    try:
+        subprocess.run(cmd, check=True)
+    except subprocess.CalledProcessError as e:
+        logging.error("FFmpeg re-encoding failed: " + str(e))
+    return output_file
+
 def play_video(video_path, disp):
     """
     Play the given video file on the Waveshare display.
     Uses OpenCV to decode frames, converts them to PIL images, rotates if needed,
     resizes, and then displays them using disp.show_image.
-    
-    To cope with the display's 20 FPS limit, if the video is encoded at a higher
-    framerate, we skip frames so that only an effective 20 frames per second are shown.
     """
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         logging.error(f"Failed to open video file: {video_path}")
         return
 
-    # Check the video's original FPS (expected to be close to 20 if re-encoded, 
-    # but if it's higher, we'll drop some frames)
-    orig_fps = cap.get(cv2.CAP_PROP_FPS)
-    logging.info(f"Playing video at {orig_fps} FPS")
+    # Optionally, check the FPS (should be 20 now)
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    logging.info(f"Playing video at {fps} FPS")
     
     # For landscape mode, swap dimensions (effective resolution: 320x240)
     if LANDSCAPE_MODE:
@@ -87,22 +99,10 @@ def play_video(video_path, disp):
         screen_width = DISPLAY_WIDTH
         screen_height = DISPLAY_HEIGHT
 
-    # Calculate frame interval ratio:
-    # If the video has a higher frame rate than 20, we only display every (orig_fps/20)th frame.
-    frame_interval = orig_fps / 20.0 if orig_fps > 20 else 1.0
-    frame_counter = 0.0
-
     while True:
         ret, frame = cap.read()
         if not ret:
             break  # End of video
-
-        # Increase the frame counter; only display a frame when we cross the interval.
-        frame_counter += 1.0
-        if frame_counter < frame_interval:
-            continue
-        # Reset counter by subtracting the interval (in case of non-integer ratio)
-        frame_counter -= frame_interval
 
         # Convert frame from BGR (OpenCV) to RGB (PIL)
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -111,15 +111,15 @@ def play_video(video_path, disp):
         # Rotate the image if in landscape mode. Adjust ROTATION_DEGREE as needed.
         if LANDSCAPE_MODE:
             image = image.rotate(ROTATION_DEGREE, expand=True)
-            # Correct mirror effect if needed
+            # Correct the mirror effect if necessary.
             image = image.transpose(Image.FLIP_LEFT_RIGHT)
 
         # Resize the image to fit the display
         image = image.resize((screen_width, screen_height))
         disp.show_image(image)
+        # No delay here, as the video is now fixed at 20 FPS
 
     cap.release()
-
 
 if __name__ == '__main__':
     # Setup logging
@@ -130,14 +130,19 @@ if __name__ == '__main__':
     disp.clear()
     touch = cst816d.cst816d()
 
-    # Prepare local filenames for downloaded videos
+    # Prepare local filenames for downloaded and re-encoded videos.
+    # We download the original video to a temporary file, then convert it.
     downloaded_videos = []
     for index, url in enumerate(VIDEO_URLS):
-        video_filename = f"video_{index+1}.mp4"
-        download_video(url, video_filename)
-        downloaded_videos.append(video_filename)
+        orig_filename = f"video_{index+1}_orig.mp4"
+        final_filename = f"video_{index+1}.mp4"
+        download_video(url, orig_filename)
+        reencode_video_to_20fps(orig_filename, final_filename)
+        downloaded_videos.append(final_filename)
+        # Optionally, remove the original file if no longer needed.
+        # os.remove(orig_filename)
 
-    # Main loop: play each video in sequence and then loop back
+    # Main loop: play each video in sequence and then loop back.
     while True:
         for video_file in downloaded_videos:
             logging.info(f"Playing video: {video_file}")
