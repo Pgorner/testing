@@ -27,39 +27,38 @@ def build_atempo_chain(factor):
     each within the allowed range [0.5, 2.0].
     """
     filters = []
-    # For factors lower than 0.5, chain multiples of 0.5.
     while factor < 0.5:
         filters.append("atempo=0.5")
         factor /= 0.5
-    # For factors higher than 2.0, chain multiples of 2.0.
     while factor > 2.0:
         filters.append("atempo=2.0")
         factor /= 2.0
     filters.append(f"atempo={factor:.3f}")
     return ",".join(filters)
 
-def measure_video_duration(preloaded_images, fps):
+def calibrate_frame_time(preloaded_images, disp, sample_frames=10):
     """
-    Run a dry-run of the timing loop (without displaying images)
-    to measure the actual duration it takes to iterate through all frames.
+    Display a small number of frames (sample_frames) and measure the average time per frame.
+    This average time (which includes the overhead of disp.show_image)
+    is used to estimate the full video duration.
     """
-    num_frames = len(preloaded_images)
-    frame_interval = 1.0 / fps
-    start_time = time.perf_counter()
-    for i in range(num_frames):
-        # Target time for frame i based on the ideal timing
-        target_time = i * frame_interval
-        # Busy-wait until that target time is reached.
-        while time.perf_counter() - start_time < target_time:
-            pass
-    return time.perf_counter() - start_time
+    n = min(sample_frames, len(preloaded_images))
+    start = time.perf_counter()
+    for i in range(n):
+        disp.show_image(preloaded_images[i])
+    end = time.perf_counter()
+    avg_time = (end - start) / n
+    logging.info(f"Calibration: Displayed {n} frames in {end-start:.3f} sec "
+                 f"(avg {avg_time:.3f} sec/frame)")
+    return avg_time
 
-def play_processed_video(processed_folder, disp, fps=10.0):
+def play_processed_video(processed_folder, disp, fps=10.0, calibration_frames=10):
     """
     Plays a video using frames from processed_folder at a given FPS.
-    First, measures the actual duration of the playback loop.
-    Then, plays the corresponding audio (audio.mp3 in the same folder)
-    using an atempo filter chain that adjusts audio speed to match the measured video duration.
+    First, it preloads the frames and runs a short calibration (using disp.show_image)
+    to estimate the actual average frame display time.
+    Then, it uses that estimated time to compute an expected video duration and an audio atempo factor.
+    Finally, it plays the audio (using ffplay with the atempo filter chain) concurrently with the video.
     """
     # Get sorted list of .npy frame files.
     frame_files = sorted([
@@ -73,7 +72,7 @@ def play_processed_video(processed_folder, disp, fps=10.0):
 
     logging.info(f"Preparing to play video from '{processed_folder}' at {fps} FPS")
 
-    # Preload all frames and convert them to PIL Images.
+    # Preload all frames (convert from npy to PIL Images).
     preloaded_images = []
     for npy_file in frame_files:
         try:
@@ -85,9 +84,11 @@ def play_processed_video(processed_folder, disp, fps=10.0):
     num_frames = len(preloaded_images)
     logging.info(f"Preloaded {num_frames} frames from '{processed_folder}'")
     
-    # --- Calibration: Measure the actual playback duration ---
-    measured_duration = measure_video_duration(preloaded_images, fps)
-    logging.info(f"Measured video duration: {measured_duration:.3f} seconds")
+    # --- Calibration: Measure average display time per frame using a sample ---
+    avg_frame_time = calibrate_frame_time(preloaded_images, disp, sample_frames=calibration_frames)
+    # Estimate expected video duration (if all frames were displayed at this rate)
+    expected_video_duration = num_frames * avg_frame_time
+    logging.info(f"Estimated video duration based on calibration: {expected_video_duration:.3f} sec")
     
     # --- Prepare audio playback ---
     audio_path = os.path.join(processed_folder, "audio.mp3")
@@ -103,17 +104,14 @@ def play_processed_video(processed_folder, disp, fps=10.0):
             audio_duration = float(result.strip())
         except Exception as e:
             logging.error("Failed to get audio duration: " + str(e))
-            audio_duration = measured_duration  # Fallback
+            audio_duration = expected_video_duration  # Fallback
 
-        # Compute the atempo factor based on measured video duration.
-        # We want: adjusted_audio_duration = audio_duration / factor == measured_duration
-        # So factor = audio_duration / measured_duration.
-        factor = audio_duration / measured_duration if measured_duration > 0 else 1.0
-        logging.info(f"Audio duration: {audio_duration:.3f}s, measured video duration: {measured_duration:.3f}s, "
+        # Compute the atempo factor so that: adjusted_audio_duration = audio_duration / factor ≈ expected_video_duration.
+        factor = audio_duration / expected_video_duration if expected_video_duration > 0 else 1.0
+        logging.info(f"Audio duration: {audio_duration:.3f}s, expected video duration: {expected_video_duration:.3f}s, "
                      f"raw atempo factor: {factor:.3f}")
         atempo_chain = build_atempo_chain(factor)
         logging.info(f"Using atempo filter chain: {atempo_chain}")
-
         audio_cmd = [
             "ffplay", "-nodisp", "-autoexit", "-vn",
             "-af", atempo_chain,
@@ -125,12 +123,16 @@ def play_processed_video(processed_folder, disp, fps=10.0):
     else:
         logging.warning(f"Audio file '{audio_path}' not found. Skipping audio playback.")
 
-    # --- Actual Playback: Use the measured duration for target timing ---
-    start_time = time.perf_counter()
+    # Clear the display after calibration (optional)
+    disp.clear()
+    time.sleep(0.1)
+
+    # --- Actual Playback ---
     logging.info("Starting frame display...")
-    # We'll distribute frames evenly over the measured duration.
+    # We now use the calibrated average frame time to schedule frames.
+    start_time = time.perf_counter()
     for frame_number, image in enumerate(preloaded_images):
-        target_time = (frame_number / (num_frames - 1)) * measured_duration if num_frames > 1 else 0
+        target_time = frame_number * avg_frame_time
         while time.perf_counter() - start_time < target_time:
             pass
         disp.show_image(image)
@@ -167,6 +169,6 @@ if __name__ == '__main__':
     while True:
         for subfolder in processed_subfolders:
             logging.info(f"Now playing video from subfolder: {subfolder}")
-            play_processed_video(subfolder, disp, fps=10.0)
+            play_processed_video(subfolder, disp, fps=10.0, calibration_frames=10)
             disp.clear()
             time.sleep(1)  # Short pause between videos
