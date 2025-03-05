@@ -67,6 +67,7 @@ def preprocess_video(video_path):
     ffmpeg_cmd = [
         "ffmpeg",
         "-i", video_path,
+        "-r", "15",  # Force output to 15 fps
         "-vf", f"scale={target_width}:{target_height}",
         os.path.join(temp_folder, "frame_%04d.bmp")
     ]
