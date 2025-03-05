@@ -13,10 +13,10 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 def play_video(video_folder):
     """
     Plays the video composed of an audio file (audio.aac) and image sequence
-    (frames%04d.png) from the given folder.
+    (frame_%04d.png) from the given folder.
     """
     audio_path = os.path.join(video_folder, "audio.aac")
-    frames_pattern = os.path.join(video_folder, "frames%04d.png")
+    frames_pattern = os.path.join(video_folder, "frame_%04d.png")
 
     if not os.path.exists(audio_path):
         logging.error(f"Audio file not found in {video_folder}")
@@ -24,15 +24,15 @@ def play_video(video_folder):
 
     # Check if at least one frame exists.
     frame_files = [f for f in os.listdir(video_folder)
-                   if f.startswith("frame") and f.endswith(".png")]
+                   if f.startswith("frame_") and f.endswith(".png")]
     if not frame_files:
         logging.error(f"No frame images found in {video_folder}")
         return
 
     logging.info(f"Playing video from folder: {os.path.basename(video_folder)}")
 
-    # Build the ffmpeg command that reads the image sequence at FPS and audio,
-    # encodes to a temporary matroska stream, and pipes it to ffplay.
+    # Build the ffmpeg command to read the image sequence at FPS and audio,
+    # then mux them into a stream piped to ffplay for playback.
     ffmpeg_cmd = [
         "ffmpeg",
         "-framerate", str(FPS),
@@ -44,13 +44,11 @@ def play_video(video_folder):
         "-f", "matroska",
         "-"  # Output to stdout
     ]
-    ffplay_cmd = ["ffplay", "-autoexit", "-"]  # Autoexit when done
+    ffplay_cmd = ["ffplay", "-autoexit", "-"]
 
     try:
-        # Open ffmpeg process, piping its stdout to ffplay.
         ffmpeg_proc = subprocess.Popen(ffmpeg_cmd, stdout=subprocess.PIPE)
         ffplay_proc = subprocess.Popen(ffplay_cmd, stdin=ffmpeg_proc.stdout)
-        # Close ffmpeg's stdout in the parent process.
         ffmpeg_proc.stdout.close()
         ffplay_proc.wait()
     except Exception as e:
@@ -61,7 +59,6 @@ def main():
         logging.error("The 'processed' directory was not found.")
         return
 
-    # Loop through all subfolders in the processed directory.
     for folder in sorted(os.listdir(PROCESSED_DIR)):
         video_folder = os.path.join(PROCESSED_DIR, folder)
         if os.path.isdir(video_folder):
