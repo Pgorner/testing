@@ -114,8 +114,9 @@ def play_processed_video(processed_folder, original_video_path, disp, fps=15.0):
     with synchronized audio.
     
     - Audio is played concurrently using ffplay (from the original video file).
-    - The .npy frames are loaded once into memory.
-    - They are then passed directly to disp.show_image with no further conversion.
+    - The .npy frames are loaded once into memory and immediately converted
+      to PIL Images (this conversion is done only once per frame).
+    - The PIL Images are then iterated over at the given FPS.
     - Timing is managed with a high-resolution timer.
     """
     # Get sorted list of .npy frame files.
@@ -146,28 +147,27 @@ def play_processed_video(processed_folder, original_video_path, disp, fps=15.0):
     )
     logging.info("Marker: Sound started")
 
-    # Preload all frames as NumPy arrays.
-    preloaded_frames = []
+    # Preload all frames and convert them to PIL Images.
+    preloaded_images = []
     for npy_file in frame_files:
         try:
             arr = np.load(npy_file)
-            preloaded_frames.append(arr)
+            # Convert the NumPy array to a PIL Image.
+            img = Image.fromarray(arr)
+            preloaded_images.append(img)
         except Exception as e:
             logging.error(f"Error loading npy frame '{npy_file}': {e}")
-    logging.info(f"Preloaded {len(preloaded_frames)} frames from '{processed_folder}'")
+    logging.info(f"Preloaded {len(preloaded_images)} frames from '{processed_folder}'")
 
-    # Use high-resolution timer.
     start_time = time.perf_counter()
     logging.info("Marker: Images start")
-    for frame_number, arr in enumerate(preloaded_frames):
+    for frame_number, image in enumerate(preloaded_images):
         expected_time = frame_number / fps
         current_time = time.perf_counter() - start_time
         if expected_time > current_time:
             time.sleep(expected_time - current_time)
-        # Directly pass the NumPy array to disp.show_image if possible.
-        # If disp.show_image accepts only PIL images, you might have to convert.
-        # If so, try to cache the conversion.
-        disp.show_image(arr)  # Assuming the driver accepts a NumPy array.
+        # Display the preconverted PIL image.
+        disp.show_image(image)
         print(f"Frame {frame_number:04d} displayed at {time.perf_counter() - start_time:.3f} sec")
 
     logging.info("Marker: Images stopped")
