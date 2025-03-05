@@ -10,7 +10,7 @@ from PIL import Image
 import st7789
 import cst816d
 
-PROCESSED_DIR = "processed"  # Folder with preprocessed frame files (.npy)
+PROCESSED_DIR = "processed"  # Base folder containing subfolders for each video
 
 # Set this flag True if you want the display in landscape mode.
 LANDSCAPE_MODE = True
@@ -19,7 +19,6 @@ LANDSCAPE_MODE = True
 DISPLAY_WIDTH = 240
 DISPLAY_HEIGHT = 320
 
-# In landscape mode, the effective resolution is swapped: 320x240.
 ROTATION_DEGREE = 0
 
 def play_processed_video(processed_folder, original_video_path, disp, fps=10.0):
@@ -37,7 +36,7 @@ def play_processed_video(processed_folder, original_video_path, disp, fps=10.0):
         logging.error(f"No processed frames found in folder '{processed_folder}'.")
         return
 
-    logging.info(f"Playing processed video from '{processed_folder}' at {fps} FPS")
+    logging.info(f"Playing video from '{processed_folder}' at {fps} FPS")
 
     # Determine display dimensions (frames are already at target dimensions).
     if LANDSCAPE_MODE:
@@ -77,7 +76,7 @@ def play_processed_video(processed_folder, original_video_path, disp, fps=10.0):
     frame_interval = 1.0 / fps  # Expected time per frame (0.1 sec for 10fps)
     for frame_number, image in enumerate(preloaded_images):
         expected_time = frame_number * frame_interval
-        # Calculate time to wait
+        # Calculate time to wait.
         delta = expected_time - (time.perf_counter() - start_time)
         if delta > 0.005:
             time.sleep(delta - 0.005)
@@ -105,12 +104,26 @@ if __name__ == '__main__':
     disp.clear()
     touch = cst816d.cst816d()
 
-    # Optionally provide an original video file for audio via command line.
-    # Usage: ./your_program.py path_to_video_file
-    original_video_path = sys.argv[1] if len(sys.argv) > 1 else None
+    # Determine the list of subfolders in the processed folder.
+    processed_subfolders = [
+        os.path.join(PROCESSED_DIR, d)
+        for d in os.listdir(PROCESSED_DIR)
+        if os.path.isdir(os.path.join(PROCESSED_DIR, d))
+    ]
+    if not processed_subfolders:
+        logging.error(f"No subfolders found in '{PROCESSED_DIR}'.")
+        sys.exit(1)
 
-    # Play the processed frames at 10 FPS.
-    play_processed_video(PROCESSED_DIR, original_video_path, disp, fps=10.0)
+    # Optionally, you could provide an original video file for audio via command line,
+    # but here we assume that each subfolder only contains frame data.
+    original_video_path = None
+    if len(sys.argv) > 1:
+        original_video_path = sys.argv[1]
 
-    # Optionally, clear the display after playback.
-    disp.clear()
+    # Loop over each subfolder and play the video.
+    while True:
+        for subfolder in processed_subfolders:
+            logging.info(f"Now playing video from subfolder: {subfolder}")
+            play_processed_video(subfolder, original_video_path, disp, fps=10.0)
+            disp.clear()
+            time.sleep(1)  # Short pause between videos
