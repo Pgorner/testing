@@ -11,7 +11,7 @@ import st7789
 import cst816d
 
 # Directories
-VIDEO_DIR = "15fpsd"         # Folder where the original 15 FPS videos are stored.
+VIDEO_DIR = "15fpsd"         # Folder where the original videos are stored.
 PROCESSED_DIR = "processed"  # Base folder to hold processed frames.
 
 # Set this flag True if you want the display in landscape mode.
@@ -61,13 +61,13 @@ def preprocess_video(video_path):
         target_width = DISPLAY_WIDTH
         target_height = DISPLAY_HEIGHT
 
-    # Extract frames as BMP images using FFmpeg.
+    # Extract frames as BMP images using FFmpeg with enforced 10fps.
     temp_folder = os.path.join(processed_folder, "temp_frames")
     os.makedirs(temp_folder, exist_ok=True)
     ffmpeg_cmd = [
         "ffmpeg",
         "-i", video_path,
-        "-r", "15",  # Force output to 15 fps
+        "-r", "10",  # Force output to 10 fps
         "-vf", f"scale={target_width}:{target_height}",
         os.path.join(temp_folder, "frame_%04d.bmp")
     ]
@@ -109,7 +109,7 @@ def preprocess_video(video_path):
     logging.info(f"Preprocessing complete for '{video_path}'.")
     return processed_folder
 
-def play_processed_video(processed_folder, original_video_path, disp, fps=15.0):
+def play_processed_video(processed_folder, original_video_path, disp, fps=10.0):
     """
     Plays a preprocessed video (frames stored as display-ready .npy RGB arrays)
     with synchronized audio.
@@ -160,16 +160,22 @@ def play_processed_video(processed_folder, original_video_path, disp, fps=15.0):
             logging.error(f"Error loading npy frame '{npy_file}': {e}")
     logging.info(f"Preloaded {len(preloaded_images)} frames from '{processed_folder}'")
 
+    # Main playback loop with high resolution timing.
     start_time = time.perf_counter()
     logging.info("Marker: Images start")
+    frame_interval = 1.0 / fps  # expected time per frame (0.1 sec for 10fps)
     for frame_number, image in enumerate(preloaded_images):
-        expected_time = frame_number / fps
-        current_time = time.perf_counter() - start_time
+        frame_start = time.perf_counter()
+        expected_time = frame_number * frame_interval
+        current_time = frame_start - start_time
         if expected_time > current_time:
             time.sleep(expected_time - current_time)
         # Display the preconverted PIL image.
         disp.show_image(image)
-        print(f"Frame {frame_number:04d} displayed at {time.perf_counter() - start_time:.3f} sec")
+        frame_end = time.perf_counter()
+        display_time = frame_end - frame_start
+        logging.debug(f"Frame {frame_number:04d} display time: {display_time:.3f} sec")
+        print(f"Frame {frame_number:04d} displayed at {frame_end - start_time:.3f} sec")
 
     logging.info("Marker: Images stopped")
     audio_proc.wait()
@@ -197,10 +203,11 @@ if __name__ == '__main__':
 
     while True:
         for processed_folder, original_video_path in processed_videos:
-            play_processed_video(processed_folder, original_video_path, disp, fps=15.0)
+            play_processed_video(processed_folder, original_video_path, disp, fps=10.0)
             disp.clear()
             time.sleep(1)
 
+    # Unreachable code block. If you want to use touch functionality, move this into an appropriate loop.
     while True:
         touch.read_touch_data()
         point, coordinates = touch.get_touch_xy()
