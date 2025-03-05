@@ -134,6 +134,25 @@ def play_processed_video(processed_folder, original_video_path, disp, fps=10.0):
 
     logging.info(f"Playing processed video from '{processed_folder}' at {fps} FPS")
 
+    # --- Calculate and print effective native FPS of the converted video ---
+    num_frames = len(frame_files)
+    try:
+        ffprobe_cmd = [
+            "ffprobe",
+            "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            original_video_path
+        ]
+        duration_output = subprocess.check_output(ffprobe_cmd).decode().strip()
+        duration = float(duration_output)
+    except Exception as e:
+        logging.error("Failed to get video duration via ffprobe: " + str(e))
+        duration = num_frames / fps  # Fallback calculation
+    effective_fps = num_frames / duration if duration > 0 else 0
+    print(f"Converted video native FPS: {effective_fps:.2f} (expected 10.00 fps, {num_frames} frames, duration {duration:.2f} sec)")
+    # ------------------------------------------------------------------------
+
     # Determine display dimensions (frames are already at target dimensions).
     if LANDSCAPE_MODE:
         screen_width = DISPLAY_HEIGHT
