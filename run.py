@@ -134,24 +134,12 @@ def play_processed_video(processed_folder, original_video_path, disp, fps=10.0):
 
     logging.info(f"Playing processed video from '{processed_folder}' at {fps} FPS")
 
-    # --- Calculate and print effective native FPS of the converted video ---
+    # --- Print conversion summary ---
     num_frames = len(frame_files)
-    try:
-        ffprobe_cmd = [
-            "ffprobe",
-            "-v", "error",
-            "-show_entries", "format=duration",
-            "-of", "default=noprint_wrappers=1:nokey=1",
-            original_video_path
-        ]
-        duration_output = subprocess.check_output(ffprobe_cmd).decode().strip()
-        duration = float(duration_output)
-    except Exception as e:
-        logging.error("Failed to get video duration via ffprobe: " + str(e))
-        duration = num_frames / fps  # Fallback calculation
-    effective_fps = num_frames / duration if duration > 0 else 0
-    print(f"Converted video native FPS: {effective_fps:.2f} (expected 10.00 fps, {num_frames} frames, duration {duration:.2f} sec)")
-    # ------------------------------------------------------------------------
+    # Calculate the expected duration from the extracted frames
+    converted_duration = num_frames / fps
+    print(f"Extracted {num_frames} frames. At {fps:.2f} fps, the converted video duration is ~{converted_duration:.2f} sec (expected 10.00 fps).")
+    # ---------------------------------
 
     # Determine display dimensions (frames are already at target dimensions).
     if LANDSCAPE_MODE:
@@ -173,70 +161,4 @@ def play_processed_video(processed_folder, original_video_path, disp, fps=10.0):
     preloaded_images = []
     for npy_file in frame_files:
         try:
-            arr = np.load(npy_file)
-            img = Image.fromarray(arr)
-            preloaded_images.append(img)
-        except Exception as e:
-            logging.error(f"Error loading npy frame '{npy_file}': {e}")
-    logging.info(f"Preloaded {len(preloaded_images)} frames from '{processed_folder}'")
-
-    # Main playback loop with high resolution timing.
-    start_time = time.perf_counter()
-    logging.info("Marker: Images start")
-    frame_interval = 1.0 / fps  # expected time per frame (0.1 sec for 10fps)
-    for frame_number, image in enumerate(preloaded_images):
-        expected_time = frame_number * frame_interval
-        # Calculate time to wait
-        delta = expected_time - (time.perf_counter() - start_time)
-        # Sleep for most of the remaining time (if any), then busy-wait
-        if delta > 0.005:
-            time.sleep(delta - 0.005)
-        while time.perf_counter() - start_time < expected_time:
-            pass
-
-        # Display the preconverted PIL image.
-        disp.show_image(image)
-        print(f"Frame {frame_number:04d} displayed at {time.perf_counter() - start_time:.3f} sec")
-
-    logging.info("Marker: Images stopped")
-    audio_proc.wait()
-    logging.info("Marker: Sound stopped")
-
-if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO)
-    
-    os.makedirs(PROCESSED_DIR, exist_ok=True)
-
-    disp = st7789.st7789()
-    disp.clear()
-    touch = cst816d.cst816d()
-
-    video_files = get_video_list(VIDEO_DIR)
-    if not video_files:
-        logging.error("No video files found in folder '{}'".format(VIDEO_DIR))
-        sys.exit(1)
-    logging.info("Found videos: " + ", ".join(video_files))
-
-    processed_videos = []  # List of tuples: (processed_folder, original_video_path)
-    for video_file in video_files:
-        processed_folder = preprocess_video(video_file)
-        processed_videos.append((processed_folder, video_file))
-
-    while True:
-        for processed_folder, original_video_path in processed_videos:
-            play_processed_video(processed_folder, original_video_path, disp, fps=10.0)
-            disp.clear()
-            time.sleep(1)
-
-    # Unreachable code block. If you want to use touch functionality, move this into an appropriate loop.
-    while True:
-        touch.read_touch_data()
-        point, coordinates = touch.get_touch_xy()
-        if point != 0 and coordinates:
-            disp.dre_rectangle(
-                coordinates[0]['x'], coordinates[0]['y'],
-                coordinates[0]['x'] + 5, coordinates[0]['y'] + 5,
-                0x00ff
-            )
-            print(f"Touch coordinates: x={coordinates[0]['x']}, y={coordinates[0]['y']}")
-        time.sleep(0.02)
+            arr = np.load(npy_
