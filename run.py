@@ -76,9 +76,10 @@ def play_processed_video(processed_folder, original_video_path, disp, fps=15.0):
     Plays a preprocessed video (as a folder of frames) with synchronized audio.
     
     - Audio is played concurrently using ffplay (from the original video file).
-    - Frames are loaded from the processed folder and displayed at the given FPS.
+    - All frames are preloaded into memory so that playback overhead is minimized.
+    - Frames are then displayed at the given FPS.
     - If in landscape mode, the frame is rotated and flipped as needed.
-    - Prints each frame's number and the elapsed time so you can see how many frames per second.
+    - A print statement shows each frame's number and the elapsed time.
     """
     # Get sorted list of frame file names.
     frame_files = sorted([
@@ -92,7 +93,18 @@ def play_processed_video(processed_folder, original_video_path, disp, fps=15.0):
 
     logging.info(f"Playing processed video from '{processed_folder}' at {fps} FPS")
     
-    # Determine display dimensions (frames are already scaled to target)
+    # Preload all frames into memory.
+    preloaded_frames = []
+    for frame_path in frame_files:
+        try:
+            # Open the image and convert it to RGB.
+            img = Image.open(frame_path).convert("RGB")
+            preloaded_frames.append(img)
+        except Exception as e:
+            logging.error(f"Error loading frame '{frame_path}': {e}")
+    logging.info(f"Preloaded {len(preloaded_frames)} frames from '{processed_folder}'")
+    
+    # Determine display dimensions (frames are already scaled)
     screen_width = DISPLAY_HEIGHT if LANDSCAPE_MODE else DISPLAY_WIDTH
     screen_height = DISPLAY_WIDTH if LANDSCAPE_MODE else DISPLAY_HEIGHT
 
@@ -104,30 +116,24 @@ def play_processed_video(processed_folder, original_video_path, disp, fps=15.0):
     )
     logging.info("Marker: Sound started")
 
-    # Synchronize display based on FPS.
+    # Use a synchronization loop based on the preloaded frames.
     start_time = time.time()
     logging.info("Marker: Images start")
-    for frame_number, frame_path in enumerate(frame_files):
-        # Calculate the expected display time.
+    for frame_number, image in enumerate(preloaded_frames):
         expected_time = frame_number / fps
         current_time = time.time() - start_time
         if expected_time > current_time:
             time.sleep(expected_time - current_time)
 
-        try:
-            image = Image.open(frame_path)
-        except Exception as e:
-            logging.error(f"Error opening frame '{frame_path}': {e}")
-            continue
-
         # Apply rotation/flip if needed.
         if LANDSCAPE_MODE:
-            image = image.rotate(ROTATION_DEGREE, expand=True)
-            image = image.transpose(Image.FLIP_LEFT_RIGHT)
+            image_disp = image.rotate(ROTATION_DEGREE, expand=True).transpose(Image.FLIP_LEFT_RIGHT)
+        else:
+            image_disp = image
 
-        # Even though frames are already scaled, resize if necessary.
-        image = image.resize((screen_width, screen_height))
-        disp.show_image(image)
+        # The frames are already scaled by FFmpeg, but if needed, resize:
+        image_disp = image_disp.resize((screen_width, screen_height))
+        disp.show_image(image_disp)
 
         # Print frame number and elapsed time.
         print(f"Frame {frame_number:04d} displayed at {time.time() - start_time:.3f} sec")
