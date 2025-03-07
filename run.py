@@ -6,8 +6,8 @@ import sys, select, tty, termios
 DT_PIN = 31  # Data pin from HX711
 SCK_PIN = 33  # Clock pin for HX711
 
-# Global variables for calibration and tare
-calibration_factor = 1000  # Initial value; will be updated by calibration
+# Global calibration variables; adjust these via calibration
+calibration_factor = 1000  # Initial calibration factor (raw units per kg)
 tare_offset = 0  # Tare offset
 
 # Setup GPIO in BOARD mode
@@ -23,18 +23,18 @@ def reset_hx711():
 
 def read_hx711():
     """
-    Reads a 24-bit value from the HX711 and returns a signed integer.
-    If the HX711 is not ready within 1 second, it resets the module.
+    Reads 24 bits from the HX711 and returns a signed integer.
+    If the HX711 does not become ready within 1 second, it resets the module.
     """
     timeout = 1.0  # seconds
     start_time = time.time()
     while GPIO.input(DT_PIN) == 1:
         if (time.time() - start_time) > timeout:
-            print("Timeout waiting for HX711. Resetting the module...")
+            print("Timeout waiting for HX711. Resetting module...")
             reset_hx711()
             start_time = time.time()
         time.sleep(0.001)
-
+        
     count = 0
     for _ in range(24):
         GPIO.output(SCK_PIN, True)
@@ -43,24 +43,23 @@ def read_hx711():
         if GPIO.input(DT_PIN):
             count += 1
 
-    # One extra pulse sets the gain to 128 for the next reading.
+    # One extra pulse sets gain to 128 (Channel A)
     GPIO.output(SCK_PIN, True)
     GPIO.output(SCK_PIN, False)
 
-    # Convert to signed 24-bit value
+    # Convert to signed 24-bit integer
     if count & 0x800000:
         count |= ~0xffffff
     return count
 
-def get_average_reading(num_readings=5, delay=0.05):
+def get_average_reading(num_readings=3, delay=0.005):
     """
-    Takes a number of readings and returns their average.
-    A smaller window (default 5 readings) is used for continuous display.
+    Takes a specified number of readings with a short delay between them
+    and returns their average. Using a small window allows for faster updates.
     """
     readings = []
     for _ in range(num_readings):
-        reading = read_hx711()
-        readings.append(reading)
+        readings.append(read_hx711())
         time.sleep(delay)
     return sum(readings) / len(readings)
 
@@ -69,34 +68,34 @@ def perform_tare():
     Tares the scale by averaging multiple readings with no load.
     """
     global tare_offset
-    print("Appearing ...")
-    # For tare, use a larger window to get a stable zero.
-    tare_offset = get_average_reading(num_readings=10, delay=0.1)
-    print("Tare complete. New tare offset set to:", tare_offset)
+    print("Taring... Ensure no load is on the scale.")
+    # For tare, use 10 readings with a short delay
+    tare_offset = get_average_reading(num_readings=10, delay=0.005)
+    print("Tare complete. Tare offset set to:", tare_offset)
 
 def read_weight():
     """
-    Reads the weight by averaging a few readings and prints the weight in kg.
-    Repeats the process 3 times with a 1-second pause between each.
+    Takes three weight readings (each as an average over 3 samples)
+    and prints the weight in kilograms.
     """
     for i in range(3):
-        avg_reading = get_average_reading(num_readings=5, delay=0.05)
+        avg_reading = get_average_reading(num_readings=3, delay=0.005)
         weight_kg = (avg_reading - tare_offset) / calibration_factor
-        print(f"Reading {i+1}: Weight (kg): {weight_kg:.3f}")
+        print("Reading {}: Weight (kg): {:.3f}".format(i+1, weight_kg))
         time.sleep(1)
 
 def calibrate_scale():
     """
     Calibrates the scale by taking readings with a known weight.
-    The user must first perform a tare, then place a known weight on the scale.
-    The calibration factor is computed as:
-        (average_with_load - tare_offset) / known_weight
+    The user is prompted to tare the scale, then to place a known weight.
+    The calibration factor is calculated as:
+        calibration_factor = (average_with_load - tare_offset) / known_weight
     """
     global calibration_factor
     input("Remove any weight and press Enter to perform tare.")
     perform_tare()
     input("Place a known weight on the scale and press Enter when ready...")
-    average_with_load = get_average_reading(num_readings=10, delay=0.1)
+    avg_with_load = get_average_reading(num_readings=10, delay=0.005)
     try:
         known_weight = float(input("Enter the known weight in kg: "))
     except ValueError:
@@ -105,34 +104,32 @@ def calibrate_scale():
     if known_weight <= 0:
         print("Weight must be positive. Calibration aborted.")
         return
-    calibration_factor = (average_with_load - tare_offset) / known_weight
-    print("Calibration complete.")
-    print("New calibration factor set to:", calibration_factor)
+    calibration_factor = (avg_with_load - tare_offset) / known_weight
+    print("Calibration complete. New calibration factor set to:", calibration_factor)
 
 def continuous_weight():
     """
-    Displays continuous weight readings (using a moving average filter) until SPACE is pressed.
+    Continuously displays the weight using a moving average filter over a small window.
+    The display updates fast, and pressing SPACE stops the continuous mode.
     """
     print("Displaying continuous weight. Press SPACE to stop.")
-    # Prepare terminal to read single characters without waiting for Enter.
+    # Configure terminal for nonblocking character reads.
     old_settings = termios.tcgetattr(sys.stdin)
     tty.setcbreak(sys.stdin.fileno())
     try:
         while True:
-            # Check if a key was pressed.
+            # Check if SPACE was pressed to stop
             if select.select([sys.stdin], [], [], 0)[0]:
                 ch = sys.stdin.read(1)
                 if ch == ' ':
-                    print("Stopping continuous display.")
+                    print("\nStopping continuous display.")
                     break
-            # Use a small moving average to smooth out fluctuations.
-            avg_reading = get_average_reading(num_readings=5, delay=0.05)
+            avg_reading = get_average_reading(num_readings=3, delay=0.005)
             weight_kg = (avg_reading - tare_offset) / calibration_factor
-            # Clear the current line and display weight.
             sys.stdout.write("\rWeight (kg): {:.3f}".format(weight_kg))
             sys.stdout.flush()
-            time.sleep(0.1)
-        # Move to next line after finishing.
+            # A short sleep helps to prevent flooding the terminal.
+            time.sleep(0.01)
         print()
     finally:
         termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
