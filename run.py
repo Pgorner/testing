@@ -19,11 +19,11 @@ GPIO.setup(SCK_PIN, GPIO.OUT)
 #  Simple 1D Kalman Filter Implementation
 #########################################
 class KalmanFilter:
-    def __init__(self, initial_value=0.0, process_variance=1e-3, measurement_variance=1e-2):
+    def __init__(self, initial_value=0.0, process_variance=1e-2, measurement_variance=1e-3):
         self.x = initial_value  # state estimate
         self.P = 1.0            # estimation error covariance
-        self.Q = process_variance  # process variance
-        self.R = measurement_variance  # measurement variance
+        self.Q = process_variance  # process variance (increased for faster response)
+        self.R = measurement_variance  # measurement variance (decreased to trust measurements more)
 
     def update(self, measurement):
         # Prediction update
@@ -152,8 +152,8 @@ def continuous_weight():
     to improve accuracy over time. Press SPACE to stop the display.
     """
     print("Displaying continuous weight with Kalman filter. Press SPACE to stop.")
-    # Set up the Kalman filter with an initial value of 0.
-    kalman = KalmanFilter(initial_value=0.0, process_variance=1e-3, measurement_variance=1e-2)
+    # Set up the Kalman filter with new parameters for faster adaptation.
+    kalman = KalmanFilter(initial_value=0.0, process_variance=1e-2, measurement_variance=1e-3)
     
     # Configure terminal for nonblocking character reads.
     old_settings = termios.tcgetattr(sys.stdin)
@@ -166,11 +166,11 @@ def continuous_weight():
                 if ch == ' ':
                     print("\nStopping continuous display.")
                     break
-            # Get a median filtered reading
+            # Use the median of 5 readings for filtering out outliers.
             filtered_reading = get_filtered_reading(num_readings=5, delay=0.005)
             # Convert raw reading to weight in kg
             weight_measurement = (filtered_reading - tare_offset) / calibration_factor
-            # Update the Kalman filter with the new measurement
+            # Update the Kalman filter with the new measurement for a faster response.
             weight_estimate = kalman.update(weight_measurement)
             sys.stdout.write("\rWeight (kg): {:.3f}".format(weight_estimate))
             sys.stdout.flush()
