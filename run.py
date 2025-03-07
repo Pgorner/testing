@@ -15,6 +15,28 @@ GPIO.setmode(GPIO.BOARD)
 GPIO.setup(DT_PIN, GPIO.IN)
 GPIO.setup(SCK_PIN, GPIO.OUT)
 
+#########################################
+#  Simple 1D Kalman Filter Implementation
+#########################################
+class KalmanFilter:
+    def __init__(self, initial_value=0.0, process_variance=1e-3, measurement_variance=1e-2):
+        self.x = initial_value  # state estimate
+        self.P = 1.0            # estimation error covariance
+        self.Q = process_variance  # process variance
+        self.R = measurement_variance  # measurement variance
+
+    def update(self, measurement):
+        # Prediction update
+        self.P += self.Q
+        # Measurement update
+        K = self.P / (self.P + self.R)
+        self.x = self.x + K * (measurement - self.x)
+        self.P = (1 - K) * self.P
+        return self.x
+
+#########################################
+#  HX711 Reading Functions
+#########################################
 def reset_hx711():
     """Resets the HX711 by pulsing the clock pin."""
     GPIO.output(SCK_PIN, True)
@@ -55,7 +77,7 @@ def read_hx711():
 def get_average_reading(num_readings=3, delay=0.005):
     """
     Takes a specified number of readings with a short delay between them
-    and returns their average. Using a small window allows for faster updates.
+    and returns their average.
     """
     readings = []
     for _ in range(num_readings):
@@ -76,13 +98,15 @@ def get_filtered_reading(num_readings=5, delay=0.005):
     median = readings[len(readings)//2]
     return median
 
+#########################################
+#  Scale Functions: Tare, Calibration, and Readings
+#########################################
 def perform_tare():
     """
     Tares the scale by averaging multiple readings with no load.
     """
     global tare_offset
     print("Taring... Ensure no load is on the scale.")
-    # For tare, use a slightly larger window for stability.
     tare_offset = get_average_reading(num_readings=10, delay=0.005)
     print("Tare complete. Tare offset set to:", tare_offset)
 
@@ -100,7 +124,6 @@ def read_weight():
 def calibrate_scale():
     """
     Calibrates the scale by taking readings with a known weight.
-    The user is prompted to tare the scale, then to place a known weight.
     The calibration factor is calculated as:
         calibration_factor = (average_with_load - tare_offset) / known_weight
     """
@@ -120,12 +143,18 @@ def calibrate_scale():
     calibration_factor = (avg_with_load - tare_offset) / known_weight
     print("Calibration complete. New calibration factor set to:", calibration_factor)
 
+#########################################
+#  Continuous Display with Kalman Filter
+#########################################
 def continuous_weight():
     """
-    Continuously displays the weight using a median-filtered value
-    to reduce the impact of outliers. Press SPACE to stop the display.
+    Continuously displays the weight using a median filter followed by a Kalman filter
+    to improve accuracy over time. Press SPACE to stop the display.
     """
-    print("Displaying continuous weight. Press SPACE to stop.")
+    print("Displaying continuous weight with Kalman filter. Press SPACE to stop.")
+    # Set up the Kalman filter with an initial value of 0.
+    kalman = KalmanFilter(initial_value=0.0, process_variance=1e-3, measurement_variance=1e-2)
+    
     # Configure terminal for nonblocking character reads.
     old_settings = termios.tcgetattr(sys.stdin)
     tty.setcbreak(sys.stdin.fileno())
@@ -137,16 +166,22 @@ def continuous_weight():
                 if ch == ' ':
                     print("\nStopping continuous display.")
                     break
-            # Use the median of 5 readings for filtering out outliers.
+            # Get a median filtered reading
             filtered_reading = get_filtered_reading(num_readings=5, delay=0.005)
-            weight_kg = (filtered_reading - tare_offset) / calibration_factor
-            sys.stdout.write("\rWeight (kg): {:.3f}".format(weight_kg))
+            # Convert raw reading to weight in kg
+            weight_measurement = (filtered_reading - tare_offset) / calibration_factor
+            # Update the Kalman filter with the new measurement
+            weight_estimate = kalman.update(weight_measurement)
+            sys.stdout.write("\rWeight (kg): {:.3f}".format(weight_estimate))
             sys.stdout.flush()
             time.sleep(0.01)
         print()
     finally:
         termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
 
+#########################################
+#  Main Menu
+#########################################
 def main_menu():
     while True:
         print("\nSelect an option:")
