@@ -27,6 +27,7 @@ def read_hx711():
     """
     timeout = 1.0  # seconds
     start_time = time.time()
+    # Wait for HX711 to become ready (DT goes low)
     while GPIO.input(DT_PIN) == 1:
         if (time.time() - start_time) > timeout:
             print("Timeout waiting for HX711. Resetting the module...")
@@ -51,48 +52,49 @@ def read_hx711():
         count |= ~0xffffff
     return count
 
+def get_average_reading(num_readings=10, delay=0.1):
+    """
+    Takes multiple readings and returns their average.
+    """
+    readings = []
+    for _ in range(num_readings):
+        reading = read_hx711()
+        readings.append(reading)
+        time.sleep(delay)
+    return sum(readings) / len(readings)
+
 def perform_tare():
     """
-    Takes 10 consecutive readings with no load to compute the tare offset.
+    Tares the scale by averaging multiple readings with no load.
     """
     global tare_offset
     print("Appearing ...")
-    readings = []
-    for _ in range(10):
-        reading = read_hx711()
-        readings.append(reading)
-        time.sleep(0.1)
-    tare_offset = sum(readings) / len(readings)
+    tare_offset = get_average_reading(num_readings=10, delay=0.1)
     print("Tare complete. New tare offset set to:", tare_offset)
 
 def read_weight():
     """
-    Reads the weight 3 times with a 1-second interval and prints the weight in kg.
+    Reads the weight by averaging multiple readings and prints the weight in kg.
+    Repeats the process 3 times with a 1-second pause between each.
     """
     for i in range(3):
-        raw_value = read_hx711()
-        # Calculate weight (kg) using current tare_offset and calibration_factor.
-        weight_kg = (raw_value - tare_offset) / calibration_factor
+        avg_reading = get_average_reading(num_readings=10, delay=0.1)
+        weight_kg = (avg_reading - tare_offset) / calibration_factor
         print(f"Reading {i+1}: Weight (kg): {weight_kg:.3f}")
         time.sleep(1)
 
 def calibrate_scale():
     """
     Calibrates the scale by taking readings with a known weight.
-    The user must place a known weight on the scale and input its mass in kg.
+    The user must first perform a tare, then place a known weight on the scale.
     The calibration factor is computed as:
-        (average_raw_with_load - tare_offset) / known_weight
+        (average_with_load - tare_offset) / known_weight
     """
     global calibration_factor
     input("Remove any weight and press Enter to perform tare.")
     perform_tare()
     input("Place a known weight on the scale and press Enter when ready...")
-    readings = []
-    for _ in range(10):
-        reading = read_hx711()
-        readings.append(reading)
-        time.sleep(0.1)
-    average_with_load = sum(readings) / len(readings)
+    average_with_load = get_average_reading(num_readings=10, delay=0.1)
     try:
         known_weight = float(input("Enter the known weight in kg: "))
     except ValueError:
