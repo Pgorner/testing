@@ -1,5 +1,9 @@
 import RPi.GPIO as GPIO
 import time
+import sys
+import select
+import tty
+import termios
 
 # Define the physical pins (using BOARD numbering) for the HX711 connections.
 DT_PIN = 31  # Data pin from HX711
@@ -72,20 +76,33 @@ def perform_tare():
     tare_offset = get_average_reading(num_readings=10, delay=0.1)
     print("Tare complete. New tare offset set to:", tare_offset)
 
-def read_weight():
+def display_continuous_weight():
     """
-    Reads the weight by performing a dummy reading to let the sensor settle,
-    then averaging multiple actual readings. Repeats this process 3 times with a delay.
+    Continuously reads and displays the weight (averaged reading) until the space bar is pressed.
     """
-    for i in range(3):
-        # Dummy reading to allow settling
-        _ = get_average_reading(num_readings=5, delay=0.1)
-        time.sleep(0.5)  # extra settling time
+    print("Displaying continuous weight. Press SPACE to stop.")
+    # Save current terminal settings
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    try:
+        # Set terminal to cbreak mode for non-blocking input
+        tty.setcbreak(fd)
+        while True:
+            # Check if a key has been pressed
+            dr, dw, de = select.select([sys.stdin], [], [], 0)
+            if dr:
+                ch = sys.stdin.read(1)
+                if ch == ' ':
+                    print("\nStopping continuous weight display.")
+                    break
 
-        avg_reading = get_average_reading(num_readings=10, delay=0.1)
-        weight_kg = (avg_reading - tare_offset) / calibration_factor
-        print(f"Reading {i+1}: Weight (kg): {weight_kg:.3f}")
-        time.sleep(1)
+            avg_reading = get_average_reading(num_readings=10, delay=0.1)
+            weight_kg = (avg_reading - tare_offset) / calibration_factor
+            print("Weight (kg): {:.3f}".format(weight_kg))
+            time.sleep(1)
+    finally:
+        # Restore the original terminal settings
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
 def calibrate_scale():
     """
@@ -115,14 +132,14 @@ def main_menu():
     while True:
         print("\nSelect an option:")
         print("1: Tare the scale")
-        print("2: Read the weight 3 times")
+        print("2: Display continuous weight")
         print("3: Calibrate the scale")
         print("q: Quit")
         choice = input("Enter your choice: ").strip().lower()
         if choice == '1':
             perform_tare()
         elif choice == '2':
-            read_weight()
+            display_continuous_weight()
         elif choice == '3':
             calibrate_scale()
         elif choice == 'q':
