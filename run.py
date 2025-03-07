@@ -63,24 +63,37 @@ def get_average_reading(num_readings=3, delay=0.005):
         time.sleep(delay)
     return sum(readings) / len(readings)
 
+def get_filtered_reading(num_readings=5, delay=0.005):
+    """
+    Takes multiple readings, sorts them, and returns the median.
+    This helps mitigate outlier effects.
+    """
+    readings = []
+    for _ in range(num_readings):
+        readings.append(read_hx711())
+        time.sleep(delay)
+    readings.sort()
+    median = readings[len(readings)//2]
+    return median
+
 def perform_tare():
     """
     Tares the scale by averaging multiple readings with no load.
     """
     global tare_offset
     print("Taring... Ensure no load is on the scale.")
-    # For tare, use 10 readings with a short delay
+    # For tare, use a slightly larger window for stability.
     tare_offset = get_average_reading(num_readings=10, delay=0.005)
     print("Tare complete. Tare offset set to:", tare_offset)
 
 def read_weight():
     """
-    Takes three weight readings (each as an average over 3 samples)
+    Takes three weight readings (each as a median over a set of samples)
     and prints the weight in kilograms.
     """
     for i in range(3):
-        avg_reading = get_average_reading(num_readings=3, delay=0.005)
-        weight_kg = (avg_reading - tare_offset) / calibration_factor
+        filtered_reading = get_filtered_reading(num_readings=5, delay=0.005)
+        weight_kg = (filtered_reading - tare_offset) / calibration_factor
         print("Reading {}: Weight (kg): {:.3f}".format(i+1, weight_kg))
         time.sleep(1)
 
@@ -109,8 +122,8 @@ def calibrate_scale():
 
 def continuous_weight():
     """
-    Continuously displays the weight using a moving average filter over a small window.
-    The display updates fast, and pressing SPACE stops the continuous mode.
+    Continuously displays the weight using a median-filtered value
+    to reduce the impact of outliers. Press SPACE to stop the display.
     """
     print("Displaying continuous weight. Press SPACE to stop.")
     # Configure terminal for nonblocking character reads.
@@ -124,11 +137,11 @@ def continuous_weight():
                 if ch == ' ':
                     print("\nStopping continuous display.")
                     break
-            avg_reading = get_average_reading(num_readings=3, delay=0.005)
-            weight_kg = (avg_reading - tare_offset) / calibration_factor
+            # Use the median of 5 readings for filtering out outliers.
+            filtered_reading = get_filtered_reading(num_readings=5, delay=0.005)
+            weight_kg = (filtered_reading - tare_offset) / calibration_factor
             sys.stdout.write("\rWeight (kg): {:.3f}".format(weight_kg))
             sys.stdout.flush()
-            # A short sleep helps to prevent flooding the terminal.
             time.sleep(0.01)
         print()
     finally:
