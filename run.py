@@ -8,7 +8,7 @@ SCK_PIN = 33  # Clock pin for HX711
 
 # Global calibration variables; adjust these via calibration
 calibration_factor = 25921.726190476194  # Initial calibration factor (raw units per kg)
-tare_offset = 0  # Tare offset
+tare_offset = -85791.3  # Tare offset
 
 # Setup GPIO in BOARD mode
 GPIO.setmode(GPIO.BOARD)
