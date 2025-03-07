@@ -1,5 +1,6 @@
 import RPi.GPIO as GPIO
 import time
+import sys, select, tty, termios
 
 # Define the physical pins (using BOARD numbering) for the HX711 connections.
 DT_PIN = 31  # Data pin from HX711
@@ -27,7 +28,6 @@ def read_hx711():
     """
     timeout = 1.0  # seconds
     start_time = time.time()
-    # Wait for HX711 to become ready (DT goes low)
     while GPIO.input(DT_PIN) == 1:
         if (time.time() - start_time) > timeout:
             print("Timeout waiting for HX711. Resetting the module...")
@@ -52,9 +52,10 @@ def read_hx711():
         count |= ~0xffffff
     return count
 
-def get_average_reading(num_readings=10, delay=0.1):
+def get_average_reading(num_readings=5, delay=0.05):
     """
-    Takes multiple readings and returns their average.
+    Takes a number of readings and returns their average.
+    A smaller window (default 5 readings) is used for continuous display.
     """
     readings = []
     for _ in range(num_readings):
@@ -69,16 +70,17 @@ def perform_tare():
     """
     global tare_offset
     print("Appearing ...")
+    # For tare, use a larger window to get a stable zero.
     tare_offset = get_average_reading(num_readings=10, delay=0.1)
     print("Tare complete. New tare offset set to:", tare_offset)
 
 def read_weight():
     """
-    Reads the weight by averaging multiple readings and prints the weight in kg.
+    Reads the weight by averaging a few readings and prints the weight in kg.
     Repeats the process 3 times with a 1-second pause between each.
     """
     for i in range(3):
-        avg_reading = get_average_reading(num_readings=10, delay=0.1)
+        avg_reading = get_average_reading(num_readings=5, delay=0.05)
         weight_kg = (avg_reading - tare_offset) / calibration_factor
         print(f"Reading {i+1}: Weight (kg): {weight_kg:.3f}")
         time.sleep(1)
@@ -107,18 +109,46 @@ def calibrate_scale():
     print("Calibration complete.")
     print("New calibration factor set to:", calibration_factor)
 
+def continuous_weight():
+    """
+    Displays continuous weight readings (using a moving average filter) until SPACE is pressed.
+    """
+    print("Displaying continuous weight. Press SPACE to stop.")
+    # Prepare terminal to read single characters without waiting for Enter.
+    old_settings = termios.tcgetattr(sys.stdin)
+    tty.setcbreak(sys.stdin.fileno())
+    try:
+        while True:
+            # Check if a key was pressed.
+            if select.select([sys.stdin], [], [], 0)[0]:
+                ch = sys.stdin.read(1)
+                if ch == ' ':
+                    print("Stopping continuous display.")
+                    break
+            # Use a small moving average to smooth out fluctuations.
+            avg_reading = get_average_reading(num_readings=5, delay=0.05)
+            weight_kg = (avg_reading - tare_offset) / calibration_factor
+            # Clear the current line and display weight.
+            sys.stdout.write("\rWeight (kg): {:.3f}".format(weight_kg))
+            sys.stdout.flush()
+            time.sleep(0.1)
+        # Move to next line after finishing.
+        print()
+    finally:
+        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
+
 def main_menu():
     while True:
         print("\nSelect an option:")
         print("1: Tare the scale")
-        print("2: Read the weight 3 times")
+        print("2: Display continuous weight")
         print("3: Calibrate the scale")
         print("q: Quit")
         choice = input("Enter your choice: ").strip().lower()
         if choice == '1':
             perform_tare()
         elif choice == '2':
-            read_weight()
+            continuous_weight()
         elif choice == '3':
             calibrate_scale()
         elif choice == 'q':
