@@ -74,10 +74,14 @@ def perform_tare():
 
 def read_weight():
     """
-    Reads the weight by averaging multiple readings and prints the weight in kg.
-    Repeats the process 3 times with a 1-second pause between each.
+    Reads the weight by performing a dummy reading to let the sensor settle,
+    then averaging multiple actual readings. Repeats this process 3 times with a delay.
     """
     for i in range(3):
+        # Dummy reading to allow settling
+        _ = get_average_reading(num_readings=5, delay=0.1)
+        time.sleep(0.5)  # extra settling time
+
         avg_reading = get_average_reading(num_readings=10, delay=0.1)
         weight_kg = (avg_reading - tare_offset) / calibration_factor
         print(f"Reading {i+1}: Weight (kg): {weight_kg:.3f}")
