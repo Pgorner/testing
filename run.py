@@ -1,8 +1,8 @@
 import RPi.GPIO as GPIO
 import time
 
-SOLENOID_1 = 28  # GPIO 28
-SOLENOID_2 = 29  # GPIO 29
+SOLENOID_1 = 38  # GPIO 28
+SOLENOID_2 = 40  # GPIO 29
 
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(SOLENOID_1, GPIO.OUT)
