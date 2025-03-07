@@ -1,28 +1,35 @@
 import RPi.GPIO as GPIO
 import time
 
-SOLENOID_1 = 38  # GPIO 28
-SOLENOID_2 = 40  # GPIO 29
+GPIO.setwarnings(False)  # Disable warnings
 
+# Define GPIO pins
+SOLENOID_1 = 22  # GPIO 22 (Pin 15)
+SOLENOID_2 = 23  # GPIO 23 (Pin 16)
+
+# Ensure correct GPIO mode
 GPIO.setmode(GPIO.BCM)
-GPIO.setup(SOLENOID_1, GPIO.OUT)
-GPIO.setup(SOLENOID_2, GPIO.OUT)
 
+# Set as outputs
+GPIO.setup(SOLENOID_1, GPIO.OUT, initial=GPIO.LOW)
+GPIO.setup(SOLENOID_2, GPIO.OUT, initial=GPIO.LOW)
+
+# Test solenoids
 print("Turning Solenoid 1 ON...")
 GPIO.output(SOLENOID_1, GPIO.HIGH)
-time.sleep(5)
+time.sleep(2)
 
 print("Turning Solenoid 1 OFF...")
 GPIO.output(SOLENOID_1, GPIO.LOW)
-time.sleep(5)
+time.sleep(2)
 
 print("Turning Solenoid 2 ON...")
 GPIO.output(SOLENOID_2, GPIO.HIGH)
-time.sleep(5)
+time.sleep(2)
 
 print("Turning Solenoid 2 OFF...")
 GPIO.output(SOLENOID_2, GPIO.LOW)
-time.sleep(5)
+time.sleep(2)
 
 GPIO.cleanup()
-print("Test complete.")
+print("Test complete. GPIO cleaned up.")
