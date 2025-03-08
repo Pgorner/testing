@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>User Dashboard</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      background-color: #f2f2f2;
+    }
+    /* Navigation bar styling */
+    .navbar {
+      background-color: #007bff;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 20px;
+    }
+    .navbar a {
+      color: white;
+      padding: 10px 15px;
+      text-decoration: none;
+      font-size: 16px;
+    }
+    .navbar a:hover {
+      background-color: #0056b3;
+      border-radius: 4px;
+    }
+    /* Dashboard container */
+    .dashboard {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 15px;
+      justify-content: center;
+      padding: 20px;
+    }
+    /* Each tile styling */
+    .tile-container {
+      width: 200px;
+    }
+    .tile {
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      padding: 15px;
+      text-align: center;
+      cursor: pointer;
+      user-select: none;
+      box-sizing: border-box;
+    }
+    .tile-icon {
+      font-size: 40px;
+      margin-bottom: 10px;
+    }
+    .tile-title {
+      font-size: 18px;
+      font-weight: bold;
+      margin-bottom: 5px;
+      color: #333;
+    }
+    .tile-value {
+      font-size: 24px;
+      color: #007bff;
+    }
+    /* Details area that is hidden by default */
+    .details {
+      display: none;
+      background: #e9e9e9;
+      border-radius: 0 0 8px 8px;
+      margin-top: 5px;
+      padding: 10px;
+      font-size: 14px;
+      text-align: left;
+    }
+    .details h4 {
+      margin: 0 0 5px;
+      font-size: 16px;
+      color: #333;
+    }
+    .details ul {
+      list-style: none;
+      padding-left: 0;
+      margin: 0;
+    }
+    .details li {
+      margin-bottom: 3px;
+    }
+    /* Popup overlay styles */
+    .popup-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.5);
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+    .popup-content {
+      background: #fff;
+      padding: 20px;
+      border-radius: 8px;
+      max-width: 400px;
+      text-align: center;
+    }
+    .popup-content h3 {
+      margin-top: 0;
+    }
+    .popup-content p {
+      margin: 15px 0;
+    }
+    .popup-content button {
+      padding: 10px 20px;
+      background-color: #007bff;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      margin: 5px;
+    }
+    .popup-content button:hover {
+      background-color: #0056b3;
+    }
+  </style>
+</head>
+<body>
+  <!-- Navigation Bar with Logout Button -->
+  <div class="navbar">
+    <div>
+      <a href="{{ url_for('dashboard') }}">Dashboard</a>
+      <a href="{{ url_for('profile') }}">Profile</a>
+    </div>
+    <a href="{{ url_for('logout') }}">Logout</a>
+  </div>
+
+  <h1 style="text-align:center; margin-top:20px;">User Dashboard</h1>
+  <div class="dashboard">
+    <!-- Tile: Beer Consumed -->
+    <div class="tile-container">
+      <div class="tile" ondblclick="toggleDetails('beerDetails')">
+        <div class="tile-icon">🍺</div>
+        <div class="tile-title">Beer Consumed</div>
+        <div class="tile-value">{{ user.beer_consumed }} L</div>
+      </div>
+      <div id="beerDetails" class="details">
+        <h4>Beer History</h4>
+        <ul>
+          {% for record in user.beer_history %}
+            <li>{{ record.date }}: {{ record.amount }} L ({{ record.type }})</li>
+          {% else %}
+            <li>No records available.</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+    <!-- Tile: Cocktails Drunk -->
+    <div class="tile-container">
+      <div class="tile" ondblclick="toggleDetails('cocktailDetails')">
+        <div class="tile-icon">🍸</div>
+        <div class="tile-title">Cocktails Drunk</div>
+        <div class="tile-value">{{ user.cocktails_drunk }} L</div>
+      </div>
+      <div id="cocktailDetails" class="details">
+        <h4>Cocktail History</h4>
+        <ul>
+          {% for record in user.cocktail_history %}
+            <li>{{ record.date }}: {{ record.amount }} L ({{ record.name }})</li>
+          {% else %}
+            <li>No records available.</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+    <!-- Tile: Ranking -->
+    <div class="tile-container">
+      <div class="tile" ondblclick="toggleDetails('rankingDetails')">
+        <div class="tile-icon">🏆</div>
+        <div class="tile-title">Ranking</div>
+        <div class="tile-value">{{ user.ranking }}</div>
+      </div>
+      <div id="rankingDetails" class="details">
+        <h4>Ranking Details</h4>
+        <ul>
+          {% for record in user.ranking_history %}
+            <li>{{ record.date }}: Ranked {{ record.rank }}</li>
+          {% else %}
+            <li>No records available.</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+    <!-- Tile: Last Transaction -->
+    <div class="tile-container">
+      <div class="tile" ondblclick="toggleDetails('transactionDetails')">
+        <div class="tile-icon">💸</div>
+        <div class="tile-title">Last Transaction</div>
+        <div class="tile-value">€{{ "%.2f"|format(user.last_transaction) }}</div>
+      </div>
+      <div id="transactionDetails" class="details">
+        <h4>Transaction Details</h4>
+        <ul>
+          {% for record in user.transaction_history %}
+            <li>{{ record.date }}: €{{ "%.2f"|format(record.amount) }} ({{ record.type }})</li>
+          {% else %}
+            <li>No records available.</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+    <!-- Tile: Top Up Funds -->
+    <div class="tile-container">
+      <div class="tile" ondblclick="openTopUpPopup()">
+        <div class="tile-icon">💳</div>
+        <div class="tile-title">Top Up Funds</div>
+        <div class="tile-value">€{{ "%.2f"|format(user.remaining_funds) }}</div>
+      </div>
+    </div>
+    <!-- Tile: Draft Me -->
+    <div class="tile-container">
+      <div class="tile" onclick="openDraftPopup()" style="max-height: 147px; min-height: 147px;">
+        <div class="tile-icon">🍹</div>
+        <div class="tile-title">Draft Me</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Popup for Top Up Instructions -->
+  <div id="topUpPopup" class="popup-overlay">
+    <div class="popup-content">
+      <h3>Top Up Instructions</h3>
+      <p>Please send money to our PayPal account using the following instructions:</p>
+      <p>
+        <strong>Amount:</strong> [Enter your top up amount]<br>
+        <strong>Message(Your User ID):</strong> {{ user.user_id }}
+      </p>
+      <p>After sending, your funds will be verified and updated in your account.</p>
+      <button onclick="payPalMe()">PayPal me</button>
+      <br><br>
+      <button onclick="closeTopUpPopup()">Close</button>
+    </div>
+  </div>
+
+  <!-- Popup for Draft Drink Selection -->
+  <div id="draftPopup" class="popup-overlay">
+    <div class="popup-content">
+      <!-- Selection Section -->
+      <div id="draftSelection">
+        <h3>Draft Your Drink</h3>
+        <p>Please choose your drink:</p>
+        <button onclick="selectDrink('beer')" style="background-color: #e0e0e0; color: #333; border: none; border-radius: 4px; padding: 10px 20px; margin: 5px;">
+          🍺 Beer
+        </button>
+        <button onclick="selectDrink('cocktail')" style="background-color: #e0e0e0; color: #333; border: none; border-radius: 4px; padding: 10px 20px; margin: 5px;">
+          🍸 Cocktail
+        </button>
+        <br><br>
+        <button onclick="closeDraftPopup()" style="background-color: #007bff; color: #fff; border: none; border-radius: 4px; padding: 10px 20px; margin: 5px;">
+          Cancel
+        </button>
+      </div>
+      <!-- Pour Section (initially hidden) -->
+      <div id="pourSection" style="display:none;">
+        <h3>Start your pour</h3>
+        <div style="display: flex; justify-content: center; align-items: center; gap: 15px; margin: 15px 0;">
+          <div id="mlCounter" style="font-size:24px;">0 ml</div>
+          <div id="euroCounter" style="font-size:24px;">0€</div>
+        </div>
+        <button onclick="donePour()" style="background-color: #007bff; color: #fff; border: none; border-radius: 4px; padding: 10px 20px; margin: 5px;">
+          Done
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // When a drink is selected, switch to the pour view.
+    function selectDrink(drinkType) {
+      console.log("Selected drink:", drinkType);
+      document.getElementById("draftSelection").style.display = "none";
+      document.getElementById("pourSection").style.display = "block";
+    }
+
+    // When done, close the popup and reset the view.
+    function donePour() {
+      closeDraftPopup();
+      document.getElementById("pourSection").style.display = "none";
+      document.getElementById("draftSelection").style.display = "block";
+    }
+    
+    // Open and close functions for the draft popup.
+    function openDraftPopup() {
+      document.getElementById("draftPopup").style.display = "flex";
+    }
+    function closeDraftPopup() {
+      document.getElementById("draftPopup").style.display = "none";
+    }
+
+    // Toggle details div on double-click for other tiles.
+    function toggleDetails(detailsId) {
+      var detailsDiv = document.getElementById(detailsId);
+      if (detailsDiv.style.display === "none" || detailsDiv.style.display === "") {
+        detailsDiv.style.display = "block";
+      } else {
+        detailsDiv.style.display = "none";
+      }
+    }
+
+    // Open the top-up popup.
+    function openTopUpPopup() {
+      document.getElementById("topUpPopup").style.display = "flex";
+    }
+
+    // Close the top-up popup.
+    function closeTopUpPopup() {
+      document.getElementById("topUpPopup").style.display = "none";
+    }
+
+    // PayPal button action: open PayPal link and close popup.
+    function payPalMe() {
+      window.open("https://www.paypal.com/paypalme/typewritingduck", "_blank");
+      closeTopUpPopup();
+    }
+  </script>
+</body>
+</html>

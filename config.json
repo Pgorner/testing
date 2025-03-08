@@ -1,0 +1,21 @@
+{
+    "beer": {
+        "price_per_ml": 0.0015,
+        "drink_name": "L\u00f6wenbr\u00e4u",
+        "barrel_size": 30000.0,
+        "theoretical_weight": 2006.0
+    },
+    "cocktail": {
+        "price_per_ml": 0.01,
+        "drink_name": "Whiskey Cola",
+        "container_size": 2000.0,
+        "theoretical_weight": 69.0
+    },
+    "ml_per_gram": 1.0,
+    "scale": {
+        "starting_weight": 0.0,
+        "current_weight": 0.0,
+        "beer_tare": 0.0,
+        "cocktail_tare": -2006.0
+    }
+}

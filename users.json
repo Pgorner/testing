@@ -1,0 +1,19 @@
+{
+    "pgorner": {
+        "username": "pgorner",
+        "email": "patrick.manuel.goerner@gmail.com",
+        "user_id": "573004",
+        "first_name": "Patrick Manuel",
+        "last_name": "G\u00f6rner",
+        "password": "scrypt:32768:8:1$GaVcTwkOfLYOCh9R$95aa3a734c10906596e008f3c1280c0f3e820f01a6d347976a911b7eda207236afe4b43e1e0052271910180b3868d6bbebf739508867c5eb94bd053fefa17693",
+        "is_verified": true,
+        "verification_token": null,
+        "reset_token": null,
+        "beer_consumed": 0.0,
+        "cocktails_drunk": 0.0,
+        "ranking": null,
+        "remaining_funds": 0.0,
+        "last_transaction": 0.0,
+        "transaction_history": []
+    }
+}

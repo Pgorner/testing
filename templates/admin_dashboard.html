@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <title>Admin Dashboard - Payment Search</title>
+    <style>
+      body { font-family: Arial, sans-serif; background-color: #f9f9f9; margin: 0; padding: 0; }
+      .header { background-color: #0074de; color: #fff; padding: 20px; text-align: center; position: relative; }
+      .logout { position: absolute; right: 20px; top: 20px; color: #fff; text-decoration: none; }
+      .container { padding: 20px; }
+      .flex-container { display: flex; gap: 40px; }
+      .column { flex: 1; background: #fff; padding: 15px; border: 1px solid #ccc; border-radius: 5px; }
+      fieldset { border: 1px solid #ccc; padding: 10px; margin-bottom: 20px; }
+      legend { font-weight: bold; }
+      label { display: block; margin-bottom: 5px; font-weight: bold; }
+      .readonly { display: inline-block; min-width: 200px; padding: 8px; background: #e9e9e9; border: 1px solid #ccc; border-radius: 3px; }
+      input[type="text"] { padding: 8px; width: 100%; border: 1px solid #ccc; border-radius: 3px; box-sizing: border-box; }
+      input[type="submit"] { padding: 8px 16px; background-color: #0074de; color: #fff; border: none; border-radius: 3px; cursor: pointer; }
+      input[type="submit"]:hover { background-color: #005bb5; }
+      .section-title { margin-top: 20px; }
+      .search-form { margin-top: 20px; }
+      table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+      th, td { padding: 10px; text-align: left; border-bottom: 1px solid #ddd; }
+      th { background-color: #0074de; color: #fff; }
+      tr:nth-child(even) { background-color: #f2f2f2; }
+      .match { background-color: #ccffcc !important; }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <h1>Admin Dashboard</h1>
+      <a class="logout" href="{{ url_for('admin_logout') }}">Logout</a>
+    </div>
+    <div class="container">
+      <h2>Admin Controls</h2>
+      <!-- Global Settings Form -->
+      <form action="{{ url_for('admin_dashboard') }}" method="POST">
+        <fieldset>
+          <legend>Global Drink Settings</legend>
+          <div class="flex-container">
+            <!-- Beer Settings Column -->
+            <div class="column">
+              <h3>Beer Settings</h3>
+              <label for="beer_name">Beer Name:</label>
+              <input type="text" id="beer_name" name="beer_name" value="{{ config.beer.drink_name }}">
+              <label for="beer_price">Beer Price (€/L):</label>
+              <input type="text" id="beer_price" name="beer_price" value="{{ config.beer.price_per_ml * 1000 }}">
+              <label for="beer_barrel_size">Beer Barrel Capacity (ml):</label>
+              <input type="text" id="beer_barrel_size" name="beer_barrel_size" value="{{ config.beer.barrel_size }}">
+              <label for="beer_theoretical">Barrel Theoretical Weight (g):</label>
+              <input type="text" id="beer_theoretical" name="beer_theoretical" value="{{ config.beer.theoretical_weight or '' }}">
+            </div>
+            <!-- Cocktail Settings Column -->
+            <div class="column">
+              <h3>Cocktail Settings</h3>
+              <label for="cocktail_name">Cocktail Name:</label>
+              <input type="text" id="cocktail_name" name="cocktail_name" value="{{ config.cocktail.drink_name }}">
+              <label for="cocktail_price">Cocktail Price (€/L):</label>
+              <input type="text" id="cocktail_price" name="cocktail_price" value="{{ config.cocktail.price_per_ml * 1000 }}">
+              <label for="cocktail_container_size">Cocktail Container Capacity (ml):</label>
+              <input type="text" id="cocktail_container_size" name="cocktail_container_size" value="{{ config.cocktail.container_size }}">
+              <label for="cocktail_theoretical">Container Theoretical Weight (g):</label>
+              <input type="text" id="cocktail_theoretical" name="cocktail_theoretical" value="{{ config.cocktail.theoretical_weight or '' }}">
+            </div>
+          </div>
+        </fieldset>
+        <fieldset>
+          <legend>Scale & Container Data</legend>
+          <div class="flex-container">
+            <!-- Beer Data Column -->
+            <div class="column">
+              <h3>Beer Data</h3>
+              <label>Measured Beer Empty Weight (g):</label>
+              <span class="readonly">{{ config.scale.beer_empty if config.scale.beer_empty and config.scale.beer_empty != 0 else "Not calibrated" }}</span>
+              <br>
+              <label>Beer Connector Weight (g):</label>
+              <span class="readonly">{{ config.beer.connector_weight if config.beer.connector_weight and config.beer.connector_weight != 0 else "Not calibrated" }}</span>
+              <br>
+              <label>Last Measured Weight (g):</label>
+              <span class="readonly">{{ config.scale.current_weight if config.scale.current_weight and config.scale.current_weight != 0 else "Not calibrated" }}</span>
+            </div>
+            <!-- Cocktail Data Column -->
+            <div class="column">
+              <h3>Cocktail Data</h3>
+              <label>Measured Cocktail Empty Weight (g):</label>
+              <span class="readonly">{{ config.scale.cocktail_empty if config.scale.cocktail_empty and config.scale.cocktail_empty != 0 else "Not calibrated" }}</span>
+              <br>
+              <label>Cocktail Connector Weight (g):</label>
+              <span class="readonly">{{ config.cocktail.connector_weight if config.cocktail.connector_weight and config.cocktail.connector_weight != 0 else "Not calibrated" }}</span>
+              <br>
+              <label>Last Measured Weight (g):</label>
+              <span class="readonly">{{ config.scale.current_weight if config.scale.current_weight and config.scale.current_weight != 0 else "Not calibrated" }}</span>
+            </div>
+          </div>
+          <input type="submit" value="Update Settings">
+        </fieldset>
+      </form>
+      
+      <!-- Calibration & Measurement Section -->
+      <h2 class="section-title">Container Calibration & Measurement</h2>
+      <div class="flex-container">
+        <!-- Beer Calibration & Measurement Column -->
+        <div class="column">
+          <h3>Beer Calibration & Measurement</h3>
+          <p>
+            <strong>Calibration:</strong> Remove the cocktail container and click "Calibrate Beer" to record the barrel's empty weight.
+            <br>
+            <em>Measured Beer Empty Weight:</em> 
+            {{ config.scale.beer_empty if config.scale.beer_empty and config.scale.beer_empty != 0 else "Not calibrated" }} g.
+          </p>
+          <form action="{{ url_for('calibrate_beer') }}" method="POST" style="margin-bottom:10px;">
+            <input type="submit" value="Calibrate Beer">
+          </form>
+          <form action="{{ url_for('measure_beer') }}" method="POST" style="margin-bottom:10px;">
+            <input type="submit" value="Measure Beer">
+          </form>
+          <p>
+            <em>Beer Liquid:</em> {{ config.beer.current_volume or "Not measured" }} ml<br>
+            <em>Remaining Capacity:</em> {{ config.beer.remaining or "Not measured" }} ml.
+          </p>
+        </div>
+        <!-- Cocktail Calibration & Measurement Column -->
+        <div class="column">
+          <h3>Cocktail Calibration & Measurement</h3>
+          <p>
+            <strong>Calibration Step 1:</strong> Remove the cocktail container and click "Start Cocktail Calibration" to record a baseline.
+            {% if session.cocktail_calib_baseline %}
+              <br><em>Baseline:</em> {{ session.cocktail_calib_baseline }} g.
+            {% else %}
+              <br>No baseline measured yet.
+            {% endif %}
+          </p>
+          <form action="{{ url_for('calibrate_cocktail_start') }}" method="POST" style="margin-bottom:10px;">
+            <input type="submit" value="Start Cocktail Calibration">
+          </form>
+          <p>
+            <strong>Calibration Step 2:</strong> Place the new (empty) cocktail container on the barrel and click "Finish Cocktail Calibration" to record its weight.
+            <br>
+            <em>Measured Cocktail Empty Weight:</em> 
+            {{ config.scale.cocktail_empty if config.scale.cocktail_empty and config.scale.cocktail_empty != 0 else "Not calibrated" }} g.
+          </p>
+          <form action="{{ url_for('calibrate_cocktail_finish') }}" method="POST" style="margin-bottom:10px;">
+            <input type="submit" value="Finish Cocktail Calibration">
+          </form>
+          <form action="{{ url_for('measure_cocktail') }}" method="POST">
+            <input type="submit" value="Measure Cocktail">
+          </form>
+          <p>
+            <em>Cocktail Liquid:</em> {{ config.cocktail.current_volume or "Not measured" }} ml<br>
+            <em>Remaining Capacity:</em> {{ config.cocktail.remaining or "Not measured" }} ml.
+          </p>
+        </div>
+      </div>
+      
+      <!-- Solenoid Valve Testing Section -->
+      <h2 class="section-title">Solenoid Valve Testing</h2>
+      <div class="flex-container">
+        <!-- Beer Valve Testing Column -->
+        <div class="column">
+          <h3>Beer Valve</h3>
+          <form action="{{ url_for('admin_test_valve_open', drink_type='beer') }}" method="POST" style="margin-bottom:10px;">
+            <input type="submit" value="Open Beer Valve">
+          </form>
+          <form action="{{ url_for('admin_test_valve_close', drink_type='beer') }}" method="POST">
+            <input type="submit" value="Close Beer Valve">
+          </form>
+        </div>
+        <!-- Cocktail Valve Testing Column -->
+        <div class="column">
+          <h3>Cocktail Valve</h3>
+          <form action="{{ url_for('admin_test_valve_open', drink_type='cocktail') }}" method="POST" style="margin-bottom:10px;">
+            <input type="submit" value="Open Cocktail Valve">
+          </form>
+          <form action="{{ url_for('admin_test_valve_close', drink_type='cocktail') }}" method="POST">
+            <input type="submit" value="Close Cocktail Valve">
+          </form>
+        </div>
+      </div>
+
+
+      <!-- Payment Search Section -->
+      <h2 class="section-title">Payment Search</h2>
+      <form class="search-form" action="{{ url_for('admin_dashboard') }}" method="GET">
+        Enter Ref #: 
+        <input type="text" name="ref" value="{{ ref_param }}">
+        Last 
+        <input type="text" name="days" value="{{ days }}" style="width:50px;"> day(s)
+        <input type="submit" value="Search">
+      </form>
+      {% if emails %}
+      <table>
+        <tr>
+          <th>Msg ID</th>
+          <th>Header Sender Name</th>
+          <th>Sender Email</th>
+          <th>Extracted Sender</th>
+          <th>Date</th>
+          <th>Subject</th>
+          <th>Reference</th>
+          <th>Amount</th>
+        </tr>
+        {% for mail in emails %}
+          <tr {% if mail.ref == ref_param and mail.ref != "" %} class="match" {% endif %}>
+            <td>{{ mail.msg_id }}</td>
+            <td>{{ mail.sender_name }}</td>
+            <td>{{ mail.sender_email }}</td>
+            <td>{{ mail.extracted_sender }}</td>
+            <td>{{ mail.date }}</td>
+            <td>{{ mail.subject }}</td>
+            <td>{{ mail.ref }}</td>
+            <td>{{ mail.amount }}</td>
+          </tr>
+        {% endfor %}
+      </table>
+      {% else %}
+        <p>No matching emails found.</p>
+      {% endif %}
+    </div>
+  </body>
+</html>

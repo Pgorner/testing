@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>User Profile</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      background-color: #f2f2f2;
+    }
+    .navbar {
+      background-color: #007bff;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 20px;
+    }
+    .navbar a {
+      color: white;
+      padding: 10px 15px;
+      text-decoration: none;
+      font-size: 16px;
+    }
+    .navbar a:hover {
+      background-color: #0056b3;
+      border-radius: 4px;
+    }
+    .profile-container {
+      max-width: 600px;
+      background: #fff;
+      margin: 30px auto;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .profile-container h2 {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    .profile-info {
+      line-height: 1.8;
+    }
+    .profile-info strong {
+      color: #007bff;
+    }
+    .verification-status {
+      color: "{{ 'green' if user.is_verified else 'red' }}";
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <div class="navbar">
+    <a href="{{ url_for('dashboard') }}">Dashboard</a>
+    <a href="{{ url_for('profile') }}">Profile</a>
+    <a href="{{ url_for('logout') }}">Logout</a>
+  </div>
+  <div class="profile-container">
+    <h2>User Profile</h2>
+    <div class="profile-info">
+      <p><strong>Name:</strong> {{ user.first_name }} {{ user.last_name }}</p>
+      <p><strong>Email:</strong> {{ user.email }}</p>
+      <p><strong>User ID:</strong> {{ user.user_id }}</p>
+      <p><strong>Email Verified:</strong> <span class="verification-status">{{ "Yes" if user.is_verified else "No" }}</span></p>
+      <p><strong>Account Balance:</strong> €{{ "%.2f"|format(user.remaining_funds) }}</p>
+      <p><strong>Total Beer Consumed:</strong> {{ user.beer_consumed }} L</p>
+      <p><strong>Total Cocktails Drunk:</strong> {{ user.cocktails_drunk }} L</p>
+      <p><strong>Ranking by Alcohol Consumed:</strong> {{ user.ranking }}</p>
+      <p><strong>Last Transaction:</strong> €{{ "%.2f"|format(user.last_transaction) }}</p>
+    </div>
+    {% if not user.is_verified %}
+      <p style="color:red;">Your email is not verified. Please check your inbox for a verification email. You cannot perform other actions until you verify your email.</p>
+    {% endif %}
+  </div>
+</body>
+</html>
